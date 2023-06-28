@@ -1,14 +1,20 @@
 import os
+import pathlib
 import shlex
 import sys
 import textwrap
 import importlib.metadata
 import importlib
 import types
+from typing import Optional, Union, Any
 
 from packaging.version import Version
-from flask import __version__ as flask_version
-from flask import Flask, send_from_directory, Response
+# from flask import __version__ as flask_version
+# from flask import Flask, send_from_directory, Response
+from fastapi import FastAPI, Response
+from fastapi.staticfiles import StaticFiles
+from starlette.types import Message
+
 from mlflow.exceptions import MlflowException
 from mlflow.server import handlers
 from mlflow.server.handlers import (
@@ -23,6 +29,15 @@ from mlflow.utils.process import _exec_cmd
 from mlflow.utils.os import is_windows
 from mlflow.version import VERSION
 
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.requests import Request, HTTPConnection
+from starlette.responses import JSONResponse
+
+from starlette_context import context, plugins
+from starlette_context.middleware import RawContextMiddleware
+
+
 # NB: These are internal environment variables used for communication between
 # the cli and the forked gunicorn processes.
 BACKEND_STORE_URI_ENV_VAR = "_MLFLOW_SERVER_FILE_STORE"
@@ -33,14 +48,57 @@ PROMETHEUS_EXPORTER_ENV_VAR = "prometheus_multiproc_dir"
 SERVE_ARTIFACTS_ENV_VAR = "_MLFLOW_SERVER_SERVE_ARTIFACTS"
 ARTIFACTS_ONLY_ENV_VAR = "_MLFLOW_SERVER_ARTIFACTS_ONLY"
 
-REL_STATIC_DIR = "js/build"
+REL_STATIC_DIR = str((pathlib.Path(__file__) / ".." / "js/public").resolve())
 
-app = Flask(__name__, static_folder=REL_STATIC_DIR)
-IS_FLASK_V1 = Version(flask_version) < Version("2.0")
+
+class QueryParamsPlugin(plugins.base.Plugin):
+    key = "query_params"
+
+    async def process_request(
+        self, request: Union[Request, HTTPConnection]
+    ) -> Optional[Any]:
+        assert isinstance(self.key, str)
+        return request.query_params
+
+    async def enrich_response(self, arg: Union[Response, Message]) -> None:
+        # print(f"[QueryParamsPlugin] Got message: {arg}")
+        pass
+
+
+class BodyPlugin(plugins.base.Plugin):
+    key = "body"
+
+    async def process_request(
+        self, request: Union[Request, HTTPConnection]
+    ) -> Optional[Any]:
+        assert isinstance(self.key, str)
+        print(f"scope: {request.scope}")
+        if hasattr(request, "body"):
+            return await request.body()
+        print(f"No body!")
+        return None
+
+    async def enrich_response(self, arg: Union[Response, Message]) -> None:
+        # print(f"[BodyPlugin] Got message: {arg}")
+        pass
+
+
+
+middleware = [
+    Middleware(
+        RawContextMiddleware,
+        plugins=(
+            QueryParamsPlugin(),
+            BodyPlugin(),
+        )
+    )
+]
+app = FastAPI(middleware=middleware)
+app.mount("/static", StaticFiles(directory=REL_STATIC_DIR), name="static")
 
 
 for http_path, handler, methods in handlers.get_endpoints():
-    app.add_url_rule(http_path, handler.__name__, handler, methods=methods)
+    app.add_api_route(http_path, handler, methods=methods)
 
 if os.getenv(PROMETHEUS_EXPORTER_ENV_VAR):
     from mlflow.server.prometheus_exporter import activate_prometheus_exporter
@@ -52,37 +110,37 @@ if os.getenv(PROMETHEUS_EXPORTER_ENV_VAR):
 
 
 # Provide a health check endpoint to ensure the application is responsive
-@app.route("/health")
+@app.get("/health")
 def health():
     return "OK", 200
 
 
 # Provide an endpoint to query the version of mlflow running on the server
-@app.route("/version")
+@app.get("/version")
 def version():
     return VERSION, 200
 
 
 # Serve the "get-artifact" route.
-@app.route(_add_static_prefix("/get-artifact"))
+@app.get(_add_static_prefix("/get-artifact"))
 def serve_artifacts():
     return get_artifact_handler()
 
 
 # Serve the "model-versions/get-artifact" route.
-@app.route(_add_static_prefix("/model-versions/get-artifact"))
+@app.get(_add_static_prefix("/model-versions/get-artifact"))
 def serve_model_version_artifact():
     return get_model_version_artifact_handler()
 
 
 # Serve the "metrics/get-history-bulk" route.
-@app.route(_add_static_prefix("/ajax-api/2.0/mlflow/metrics/get-history-bulk"))
+@app.get(_add_static_prefix("/ajax-api/2.0/mlflow/metrics/get-history-bulk"))
 def serve_get_metric_history_bulk():
     return get_metric_history_bulk_handler()
 
 
 # Serve the "experiments/search-datasets" route.
-@app.route(_add_static_prefix("/ajax-api/2.0/mlflow/experiments/search-datasets"))
+@app.get(_add_static_prefix("/ajax-api/2.0/mlflow/experiments/search-datasets"))
 def serve_search_datasets():
     return search_datasets_handler()
 
@@ -90,16 +148,13 @@ def serve_search_datasets():
 # We expect the react app to be built assuming it is hosted at /static-files, so that requests for
 # CSS/JS resources will be made to e.g. /static-files/main.css and we can handle them here.
 # The files are hashed based on source code, so ok to send Cache-Control headers via max_age.
-@app.route(_add_static_prefix("/static-files/<path:path>"))
+@app.get(_add_static_prefix("/static-files/<path:path>"))
 def serve_static_file(path):
-    if IS_FLASK_V1:
-        return send_from_directory(app.static_folder, path, cache_timeout=2419200)
-    else:
-        return send_from_directory(app.static_folder, path, max_age=2419200)
+    return send_from_directory(app.static_folder, path, max_age=2419200)
 
 
 # Serve the index.html for the React App for all other routes.
-@app.route(_add_static_prefix("/"))
+@app.get(_add_static_prefix("/"))
 def serve():
     if os.path.exists(os.path.join(app.static_folder, "index.html")):
         return send_from_directory(app.static_folder, "index.html")
@@ -168,13 +223,11 @@ def get_app_client(app_name: str, *args, **kwargs):
 def _build_waitress_command(waitress_opts, host, port, app_name, is_factory):
     opts = shlex.split(waitress_opts) if waitress_opts else []
     return [
-        "waitress-serve",
+        "uvicorn",
         *opts,
         f"--host={host}",
         f"--port={port}",
-        "--ident=mlflow",
-        *(["--call"] if is_factory else []),
-        app_name,
+        "mlflow.server:app",
     ]
 
 

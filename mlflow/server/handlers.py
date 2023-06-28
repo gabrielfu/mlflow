@@ -10,7 +10,8 @@ import re
 import logging
 from functools import wraps
 
-from flask import Response, request, current_app, send_file
+from flask import request, current_app, send_file
+from fastapi import Response, Request
 from google.protobuf import descriptor
 from google.protobuf.json_format import ParseError
 
@@ -89,6 +90,13 @@ from mlflow.utils.uri import is_local_uri, is_file_uri
 from mlflow.utils.file_utils import local_file_uri_to_path
 from mlflow.tracking.registry import UnsupportedModelRegistryStoreURIException
 from mlflow.environment_variables import MLFLOW_ALLOW_FILE_URI_AS_MODEL_VERSION_SOURCE
+
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+from starlette_context import context, plugins
 
 _logger = logging.getLogger(__name__)
 _tracking_store = None
@@ -382,20 +390,21 @@ def _validate_param_against_schema(schema, param, value, proto_parsing_succeeded
     return None
 
 
-def _get_request_json(flask_request=request):
-    return flask_request.get_json(force=True, silent=True)
+async def _get_request_json(flask_request: Request=request):
+    return await flask_request.json()
 
 
-def _get_request_message(request_message, flask_request=request, schema=None):
+async def _get_request_message(request_message, flask_request: Request=request, schema=None):
     from querystring_parser import parser
+    _logger.info(f"context.data: {context.data}")
 
-    if flask_request.method == "GET" and len(flask_request.query_string) > 0:
+    if flask_request.method == "GET" and len(flask_request.query_params) > 0:
         # This is a hack to make arrays of length 1 work with the parser.
         # for example experiment_ids%5B%5D=0 should be parsed to {experiment_ids: [0]}
         # but it gets parsed to {experiment_ids: 0}
         # but it doesn't. However, experiment_ids%5B0%5D=0 will get parsed to the right
         # result.
-        query_string = re.sub("%5B%5D", "%5B0%5D", flask_request.query_string.decode("utf-8"))
+        query_string = re.sub("%5B%5D", "%5B0%5D", str(flask_request.query_params))
         request_dict = parser.parse(query_string, normalized=True)
         # Convert atomic values of repeated fields to lists before calling protobuf deserialization.
         # Context: We parse the parameter string into a dictionary outside of protobuf since
@@ -413,7 +422,11 @@ def _get_request_message(request_message, flask_request=request, schema=None):
         parse_dict(request_dict, request_message)
         return request_message
 
-    request_json = _get_request_json(flask_request)
+    body = await flask_request.body()
+    _logger.info(f"body: {body}")
+    _logger.info("getting json")
+    request_json = await _get_request_json(flask_request)
+    _logger.info(request_json)
 
     # Older clients may post their JSON double-encoded as strings, so the get_json
     # above actually converts it to a string. Therefore, we check this condition
@@ -671,11 +684,12 @@ def _update_experiment():
     return response
 
 
-@catch_mlflow_exception
-@_disable_if_artifacts_only
-def _create_run():
-    request_message = _get_request_message(
+# @catch_mlflow_exception
+# @_disable_if_artifacts_only
+async def _create_run(request: Request):
+    request_message = await _get_request_message(
         CreateRun(),
+        request,
         schema={
             "experiment_id": [_assert_string],
             "start_time": [_assert_intlike],
@@ -1111,11 +1125,13 @@ def search_datasets_handler():
         return _not_implemented()
 
 
-@catch_mlflow_exception
-@_disable_if_artifacts_only
-def _search_experiments():
-    request_message = _get_request_message(
+# @catch_mlflow_exception
+# @_disable_if_artifacts_only
+async def _search_experiments(request: Request):
+    _logger.info(f"Inside handler!")
+    request_message = await _get_request_message(
         SearchExperiments(),
+        request,
         schema={
             "view_type": [_assert_intlike],
             "max_results": [_assert_intlike],
@@ -1135,8 +1151,7 @@ def _search_experiments():
     response_message.experiments.extend([e.to_proto() for e in experiment_entities])
     if experiment_entities.token:
         response_message.next_page_token = experiment_entities.token
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = Response(message_to_json(response_message))
     return response
 
 
