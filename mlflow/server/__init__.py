@@ -43,7 +43,8 @@ PROMETHEUS_EXPORTER_ENV_VAR = "prometheus_multiproc_dir"
 SERVE_ARTIFACTS_ENV_VAR = "_MLFLOW_SERVER_SERVE_ARTIFACTS"
 ARTIFACTS_ONLY_ENV_VAR = "_MLFLOW_SERVER_ARTIFACTS_ONLY"
 
-STATIC_FOLDER = str((pathlib.Path(__file__).parent / "js/build").resolve())
+REL_STATIC_FOLDER = "js/build"
+STATIC_FOLDER = str((pathlib.Path(__file__).parent / REL_STATIC_FOLDER).resolve())
 
 
 class QueryParamsPlugin(plugins.base.Plugin):
@@ -97,7 +98,7 @@ middleware = [
     )
 ]
 app = FastAPI(middleware=middleware)
-app.mount("/static", StaticFiles(directory=STATIC_FOLDER), name="static")
+app.mount("/" + REL_STATIC_FOLDER, StaticFiles(directory=STATIC_FOLDER), name="static")
 
 
 for http_path, handler, methods in handlers.get_endpoints():
