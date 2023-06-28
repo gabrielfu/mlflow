@@ -97,7 +97,7 @@ middleware = [
     )
 ]
 app = FastAPI(middleware=middleware)
-app.mount("/static", StaticFiles(directory=STATIC_FOLDER, html=True), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_FOLDER), name="static")
 
 
 for http_path, handler, methods in handlers.get_endpoints():
