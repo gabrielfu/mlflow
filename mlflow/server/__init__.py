@@ -8,12 +8,8 @@ import importlib
 import types
 from typing import Optional, Union, Any
 
-from packaging.version import Version
-# from flask import __version__ as flask_version
-# from flask import Flask, send_from_directory, Response
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
-from starlette.types import Message
 
 from mlflow.exceptions import MlflowException
 from mlflow.server import handlers
@@ -29,12 +25,11 @@ from mlflow.utils.process import _exec_cmd
 from mlflow.utils.os import is_windows
 from mlflow.version import VERSION
 
-from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request, HTTPConnection
-from starlette.responses import JSONResponse
+from starlette.responses import guess_type
 
-from starlette_context import context, plugins
+from starlette_context import plugins
 from starlette_context.middleware import RawContextMiddleware
 
 
@@ -48,7 +43,7 @@ PROMETHEUS_EXPORTER_ENV_VAR = "prometheus_multiproc_dir"
 SERVE_ARTIFACTS_ENV_VAR = "_MLFLOW_SERVER_SERVE_ARTIFACTS"
 ARTIFACTS_ONLY_ENV_VAR = "_MLFLOW_SERVER_ARTIFACTS_ONLY"
 
-REL_STATIC_DIR = str((pathlib.Path(__file__) / ".." / "js/public").resolve())
+STATIC_FOLDER = str((pathlib.Path(__file__).parent / "js/build").resolve())
 
 
 class QueryParamsPlugin(plugins.base.Plugin):
@@ -102,7 +97,7 @@ middleware = [
     )
 ]
 app = FastAPI(middleware=middleware)
-app.mount("/static", StaticFiles(directory=REL_STATIC_DIR), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_FOLDER, html=True), name="static")
 
 
 for http_path, handler, methods in handlers.get_endpoints():
@@ -156,16 +151,29 @@ def serve_search_datasets():
 # We expect the react app to be built assuming it is hosted at /static-files, so that requests for
 # CSS/JS resources will be made to e.g. /static-files/main.css and we can handle them here.
 # The files are hashed based on source code, so ok to send Cache-Control headers via max_age.
-@app.get(_add_static_prefix("/static-files/<path:path>"))
+@app.get(_add_static_prefix("/static-files/{path:path}"))
 def serve_static_file(path):
-    return send_from_directory(app.static_folder, path, max_age=2419200)
+    return _send_from_directory(STATIC_FOLDER, path)
+
+
+def _send_from_directory(
+    directory: Union[os.PathLike, str],
+    path: Union[os.PathLike, str],
+):
+    if ".." in path:
+        return None
+    path = os.path.join(directory, path)
+    with open(path, "rb") as f:
+        data = f.read()
+    mimetype, _ = guess_type(path)
+    return Response(content=data, media_type=mimetype)
 
 
 # Serve the index.html for the React App for all other routes.
 @app.get(_add_static_prefix("/"))
 def serve():
-    if os.path.exists(os.path.join(app.static_folder, "index.html")):
-        return send_from_directory(app.static_folder, "index.html")
+    if os.path.exists(os.path.join(STATIC_FOLDER, "index.html")):
+        return _send_from_directory(STATIC_FOLDER, "index.html")
 
     text = textwrap.dedent(
         """
@@ -182,7 +190,7 @@ def serve():
     from PyPI via 'pip install mlflow', and rerun the MLflow server.
     """
     )
-    return Response(text, mimetype="text/plain")
+    return Response(text, media_type="text/plain")
 
 
 def _find_app(app_name: str) -> str:
