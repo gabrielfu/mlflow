@@ -11,7 +11,7 @@ import logging
 from functools import wraps
 
 from flask import request, current_app, send_file
-from fastapi import Response, Request
+from fastapi import Response
 from google.protobuf import descriptor
 from google.protobuf.json_format import ParseError
 
@@ -390,21 +390,20 @@ def _validate_param_against_schema(schema, param, value, proto_parsing_succeeded
     return None
 
 
-async def _get_request_json(flask_request: Request=request):
-    return await flask_request.json()
+def _get_request_json():
+    return json.loads(context.data["body"])
 
 
-async def _get_request_message(request_message, flask_request: Request=request, schema=None):
+def _get_request_message(request_message, flask_request: Request=request, schema=None):
     from querystring_parser import parser
-    _logger.info(f"context.data: {context.data}")
 
-    if flask_request.method == "GET" and len(flask_request.query_params) > 0:
+    if context.data["method"] == "GET" and len(context.data["query_params"]) > 0:
         # This is a hack to make arrays of length 1 work with the parser.
         # for example experiment_ids%5B%5D=0 should be parsed to {experiment_ids: [0]}
         # but it gets parsed to {experiment_ids: 0}
         # but it doesn't. However, experiment_ids%5B0%5D=0 will get parsed to the right
         # result.
-        query_string = re.sub("%5B%5D", "%5B0%5D", str(flask_request.query_params))
+        query_string = re.sub("%5B%5D", "%5B0%5D", str(context.data["query_params"]))
         request_dict = parser.parse(query_string, normalized=True)
         # Convert atomic values of repeated fields to lists before calling protobuf deserialization.
         # Context: We parse the parameter string into a dictionary outside of protobuf since
@@ -422,11 +421,7 @@ async def _get_request_message(request_message, flask_request: Request=request, 
         parse_dict(request_dict, request_message)
         return request_message
 
-    body = await flask_request.body()
-    _logger.info(f"body: {body}")
-    _logger.info("getting json")
-    request_json = await _get_request_json(flask_request)
-    _logger.info(request_json)
+    request_json = _get_request_json()
 
     # Older clients may post their JSON double-encoded as strings, so the get_json
     # above actually converts it to a string. Therefore, we check this condition
@@ -1125,11 +1120,10 @@ def search_datasets_handler():
         return _not_implemented()
 
 
-# @catch_mlflow_exception
-# @_disable_if_artifacts_only
-async def _search_experiments(request: Request):
-    _logger.info(f"Inside handler!")
-    request_message = await _get_request_message(
+@catch_mlflow_exception
+@_disable_if_artifacts_only
+def _search_experiments():
+    request_message = _get_request_message(
         SearchExperiments(),
         request,
         schema={

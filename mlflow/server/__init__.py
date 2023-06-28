@@ -60,10 +60,6 @@ class QueryParamsPlugin(plugins.base.Plugin):
         assert isinstance(self.key, str)
         return request.query_params
 
-    async def enrich_response(self, arg: Union[Response, Message]) -> None:
-        # print(f"[QueryParamsPlugin] Got message: {arg}")
-        pass
-
 
 class BodyPlugin(plugins.base.Plugin):
     key = "body"
@@ -72,24 +68,36 @@ class BodyPlugin(plugins.base.Plugin):
         self, request: Union[Request, HTTPConnection]
     ) -> Optional[Any]:
         assert isinstance(self.key, str)
-        print(f"scope: {request.scope}")
         if hasattr(request, "body"):
             return await request.body()
-        print(f"No body!")
         return None
 
-    async def enrich_response(self, arg: Union[Response, Message]) -> None:
-        # print(f"[BodyPlugin] Got message: {arg}")
-        pass
 
+class MethodPlugin(plugins.base.Plugin):
+    key = "method"
+
+    async def process_request(
+        self, request: Union[Request, HTTPConnection]
+    ) -> Optional[Any]:
+        assert isinstance(self.key, str)
+        return request.method
+
+
+class RequestContextMiddleware(RawContextMiddleware):
+    @staticmethod
+    def get_request_object(
+        scope, receive, send
+    ) -> Union[Request, HTTPConnection]:
+        return Request(scope, receive, send)
 
 
 middleware = [
     Middleware(
-        RawContextMiddleware,
+        RequestContextMiddleware,
         plugins=(
             QueryParamsPlugin(),
             BodyPlugin(),
+            MethodPlugin(),
         )
     )
 ]
