@@ -5,10 +5,12 @@ import textwrap
 import importlib.metadata
 import importlib
 import types
+from typing import Union
 
-from packaging.version import Version
-from flask import __version__ as flask_version
-from flask import Flask, send_from_directory, Response
+from fastapi import FastAPI, Response
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import guess_type
+
 from mlflow.exceptions import MlflowException
 from mlflow.server import handlers
 from mlflow.server.handlers import (
@@ -19,9 +21,11 @@ from mlflow.server.handlers import (
     get_model_version_artifact_handler,
     search_datasets_handler,
 )
+from mlflow.server.middleware import middleware
 from mlflow.utils.process import _exec_cmd
 from mlflow.utils.os import is_windows
 from mlflow.version import VERSION
+
 
 # NB: These are internal environment variables used for communication between
 # the cli and the forked gunicorn processes.
@@ -35,12 +39,12 @@ ARTIFACTS_ONLY_ENV_VAR = "_MLFLOW_SERVER_ARTIFACTS_ONLY"
 
 REL_STATIC_DIR = "js/build"
 
-app = Flask(__name__, static_folder=REL_STATIC_DIR)
-IS_FLASK_V1 = Version(flask_version) < Version("2.0")
+app = FastAPI(middleware=middleware)
+app.mount("/" + REL_STATIC_DIR, StaticFiles(directory=REL_STATIC_DIR, check_dir=False), name="static")
 
 
 for http_path, handler, methods in handlers.get_endpoints():
-    app.add_url_rule(http_path, handler.__name__, handler, methods=methods)
+    app.add_api_route(http_path, handler, methods=methods)
 
 if os.getenv(PROMETHEUS_EXPORTER_ENV_VAR):
     from mlflow.server.prometheus_exporter import activate_prometheus_exporter
@@ -52,37 +56,37 @@ if os.getenv(PROMETHEUS_EXPORTER_ENV_VAR):
 
 
 # Provide a health check endpoint to ensure the application is responsive
-@app.route("/health")
+@app.get("/health")
 def health():
     return "OK", 200
 
 
 # Provide an endpoint to query the version of mlflow running on the server
-@app.route("/version")
+@app.get("/version")
 def version():
     return VERSION, 200
 
 
 # Serve the "get-artifact" route.
-@app.route(_add_static_prefix("/get-artifact"))
+@app.get(_add_static_prefix("/get-artifact"))
 def serve_artifacts():
     return get_artifact_handler()
 
 
 # Serve the "model-versions/get-artifact" route.
-@app.route(_add_static_prefix("/model-versions/get-artifact"))
+@app.get(_add_static_prefix("/model-versions/get-artifact"))
 def serve_model_version_artifact():
     return get_model_version_artifact_handler()
 
 
 # Serve the "metrics/get-history-bulk" route.
-@app.route(_add_static_prefix("/ajax-api/2.0/mlflow/metrics/get-history-bulk"))
+@app.get(_add_static_prefix("/ajax-api/2.0/mlflow/metrics/get-history-bulk"))
 def serve_get_metric_history_bulk():
     return get_metric_history_bulk_handler()
 
 
 # Serve the "experiments/search-datasets" route.
-@app.route(_add_static_prefix("/ajax-api/2.0/mlflow/experiments/search-datasets"))
+@app.get(_add_static_prefix("/ajax-api/2.0/mlflow/experiments/search-datasets"))
 def serve_search_datasets():
     return search_datasets_handler()
 
@@ -90,19 +94,29 @@ def serve_search_datasets():
 # We expect the react app to be built assuming it is hosted at /static-files, so that requests for
 # CSS/JS resources will be made to e.g. /static-files/main.css and we can handle them here.
 # The files are hashed based on source code, so ok to send Cache-Control headers via max_age.
-@app.route(_add_static_prefix("/static-files/<path:path>"))
+@app.get(_add_static_prefix("/static-files/{path:path}"))
 def serve_static_file(path):
-    if IS_FLASK_V1:
-        return send_from_directory(app.static_folder, path, cache_timeout=2419200)
-    else:
-        return send_from_directory(app.static_folder, path, max_age=2419200)
+    return _send_from_directory(REL_STATIC_DIR, path)
+
+
+def _send_from_directory(
+    directory: Union[os.PathLike, str],
+    path: Union[os.PathLike, str],
+):
+    if ".." in path:
+        return None
+    path = os.path.join(directory, path)
+    with open(path, "rb") as f:
+        data = f.read()
+    mimetype, _ = guess_type(path)
+    return Response(content=data, media_type=mimetype)
 
 
 # Serve the index.html for the React App for all other routes.
-@app.route(_add_static_prefix("/"))
+@app.get(_add_static_prefix("/"))
 def serve():
-    if os.path.exists(os.path.join(app.static_folder, "index.html")):
-        return send_from_directory(app.static_folder, "index.html")
+    if os.path.exists(os.path.join(REL_STATIC_DIR, "index.html")):
+        return _send_from_directory(REL_STATIC_DIR, "index.html")
 
     text = textwrap.dedent(
         """
@@ -119,7 +133,7 @@ def serve():
     from PyPI via 'pip install mlflow', and rerun the MLflow server.
     """
     )
-    return Response(text, mimetype="text/plain")
+    return Response(text, media_type="text/plain")
 
 
 def _find_app(app_name: str) -> str:
@@ -165,15 +179,14 @@ def get_app_client(app_name: str, *args, **kwargs):
     )
 
 
-def _build_waitress_command(waitress_opts, host, port, app_name, is_factory):
+def _build_uvicorn_command(waitress_opts, host, port, app_name, is_factory):
     opts = shlex.split(waitress_opts) if waitress_opts else []
     return [
-        "waitress-serve",
+        "uvicorn",
         *opts,
         f"--host={host}",
         f"--port={port}",
-        "--ident=mlflow",
-        *(["--call"] if is_factory else []),
+        *(["--factory"] if is_factory else []),
         app_name,
     ]
 
@@ -188,6 +201,8 @@ def _build_gunicorn_command(gunicorn_opts, host, port, workers, app_name):
         bind_address,
         "-w",
         str(workers),
+        "-k",
+        "uvicorn.workers.UvicornWorker",
         app_name,
     ]
 
@@ -239,13 +254,13 @@ def _run_server(
     else:
         app = _find_app(app_name)
         is_factory = _is_factory(app)
-        # `waitress` doesn't support `()` syntax for factory functions.
-        # Instead, we need to use the `--call` flag.
+        # `uvicorn` doesn't support `()` syntax for factory functions.
+        # Instead, we need to use the `--factory` flag.
         app = f"{app}()" if (not is_windows() and is_factory) else app
 
     # TODO: eventually may want waitress on non-win32
     if sys.platform == "win32":
-        full_command = _build_waitress_command(waitress_opts, host, port, app, is_factory)
+        full_command = _build_uvicorn_command(waitress_opts, host, port, app, is_factory)
     else:
         full_command = _build_gunicorn_command(gunicorn_opts, host, port, workers or 4, app)
     _exec_cmd(full_command, extra_env=env_map, capture_output=False)

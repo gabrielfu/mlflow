@@ -10,7 +10,9 @@ import re
 import logging
 from functools import wraps
 
-from flask import Response, request, current_app, send_file
+from flask import request
+from fastapi import Response
+from fastapi.responses import FileResponse, StreamingResponse
 from google.protobuf import descriptor
 from google.protobuf.json_format import ParseError
 
@@ -89,6 +91,11 @@ from mlflow.utils.uri import is_local_uri, is_file_uri
 from mlflow.utils.file_utils import local_file_uri_to_path
 from mlflow.tracking.registry import UnsupportedModelRegistryStoreURIException
 from mlflow.environment_variables import MLFLOW_ALLOW_FILE_URI_AS_MODEL_VERSION_SOURCE
+
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+from starlette_context import context
 
 _logger = logging.getLogger(__name__)
 _tracking_store = None
@@ -382,20 +389,20 @@ def _validate_param_against_schema(schema, param, value, proto_parsing_succeeded
     return None
 
 
-def _get_request_json(flask_request=request):
-    return flask_request.get_json(force=True, silent=True)
+def _get_request_json():
+    return json.loads(context.data["body"])
 
 
-def _get_request_message(request_message, flask_request=request, schema=None):
+def _get_request_message(request_message, flask_request=None, schema=None):
     from querystring_parser import parser
 
-    if flask_request.method == "GET" and len(flask_request.query_string) > 0:
+    if context.data["method"] == "GET" and len(context.data["query_params"]) > 0:
         # This is a hack to make arrays of length 1 work with the parser.
         # for example experiment_ids%5B%5D=0 should be parsed to {experiment_ids: [0]}
         # but it gets parsed to {experiment_ids: 0}
         # but it doesn't. However, experiment_ids%5B0%5D=0 will get parsed to the right
         # result.
-        query_string = re.sub("%5B%5D", "%5B0%5D", flask_request.query_string.decode("utf-8"))
+        query_string = re.sub("%5B%5D", "%5B0%5D", str(context.data["query_params"]))
         request_dict = parser.parse(query_string, normalized=True)
         # Convert atomic values of repeated fields to lists before calling protobuf deserialization.
         # Context: We parse the parameter string into a dictionary outside of protobuf since
@@ -413,7 +420,7 @@ def _get_request_message(request_message, flask_request=request, schema=None):
         parse_dict(request_dict, request_message)
         return request_message
 
-    request_json = _get_request_json(flask_request)
+    request_json = _get_request_json()
 
     # Older clients may post their JSON double-encoded as strings, so the get_json
     # above actually converts it to a string. Therefore, we check this condition
@@ -448,25 +455,12 @@ def _get_request_message(request_message, flask_request=request, schema=None):
     return request_message
 
 
-def _response_with_file_attachment_headers(file_path, response):
-    mime_type = _guess_mime_type(file_path)
-    filename = pathlib.Path(file_path).name
-    response.mimetype = mime_type
-    content_disposition_header_name = "Content-Disposition"
-    if content_disposition_header_name not in response.headers:
-        response.headers[content_disposition_header_name] = f"attachment; filename={filename}"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Content-Type"] = mime_type
-    return response
-
-
 def _send_artifact(artifact_repository, path):
     file_path = os.path.abspath(artifact_repository.download_artifacts(path))
+    filename = pathlib.Path(file_path).name
     # Always send artifacts as attachments to prevent the browser from displaying them on our web
     # server's domain, which might enable XSS.
-    mime_type = _guess_mime_type(file_path)
-    file_sender_response = send_file(file_path, mimetype=mime_type, as_attachment=True)
-    return _response_with_file_attachment_headers(file_path, file_sender_response)
+    return FileResponse(file_path, filename=filename, content_disposition_type="attachment")
 
 
 def catch_mlflow_exception(func):
@@ -475,8 +469,7 @@ def catch_mlflow_exception(func):
         try:
             return func(*args, **kwargs)
         except MlflowException as e:
-            response = Response(mimetype="application/json")
-            response.set_data(e.serialize_as_json())
+            response = JSONResponse(e.serialize_as_json())
             response.status_code = e.get_http_status_code()
             return response
 
@@ -586,8 +579,7 @@ def _create_experiment():
     )
     response_message = CreateExperiment.Response()
     response_message.experiment_id = experiment_id
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -600,8 +592,7 @@ def _get_experiment():
     response_message = GetExperiment.Response()
     experiment = _get_tracking_store().get_experiment(request_message.experiment_id).to_proto()
     response_message.experiment.MergeFrom(experiment)
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -620,8 +611,7 @@ def _get_experiment_by_name():
         )
     experiment = store_exp.to_proto()
     response_message.experiment.MergeFrom(experiment)
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -633,8 +623,7 @@ def _delete_experiment():
     )
     _get_tracking_store().delete_experiment(request_message.experiment_id)
     response_message = DeleteExperiment.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -646,8 +635,7 @@ def _restore_experiment():
     )
     _get_tracking_store().restore_experiment(request_message.experiment_id)
     response_message = RestoreExperiment.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -666,8 +654,7 @@ def _update_experiment():
             request_message.experiment_id, request_message.new_name
         )
     response_message = UpdateExperiment.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -694,8 +681,7 @@ def _create_run():
 
     response_message = CreateRun.Response()
     response_message.run.MergeFrom(run.to_proto())
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -717,8 +703,7 @@ def _update_run():
     status = request_message.status if request_message.HasField("status") else None
     updated_info = _get_tracking_store().update_run_info(run_id, status, end_time, run_name)
     response_message = UpdateRun.Response(run_info=updated_info.to_proto())
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -730,8 +715,7 @@ def _delete_run():
     )
     _get_tracking_store().delete_run(request_message.run_id)
     response_message = DeleteRun.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -743,8 +727,7 @@ def _restore_run():
     )
     _get_tracking_store().restore_run(request_message.run_id)
     response_message = RestoreRun.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -767,8 +750,7 @@ def _log_metric():
     run_id = request_message.run_id or request_message.run_uuid
     _get_tracking_store().log_metric(run_id, metric)
     response_message = LogMetric.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -787,8 +769,7 @@ def _log_param():
     run_id = request_message.run_id or request_message.run_uuid
     _get_tracking_store().log_param(run_id, param)
     response_message = LogParam.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -810,8 +791,7 @@ def _log_inputs():
 
     _get_tracking_store().log_inputs(run_id, datasets=datasets)
     response_message = LogInputs.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -829,8 +809,7 @@ def _set_experiment_tag():
     tag = ExperimentTag(request_message.key, request_message.value)
     _get_tracking_store().set_experiment_tag(request_message.experiment_id, tag)
     response_message = SetExperimentTag.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -849,8 +828,7 @@ def _set_tag():
     run_id = request_message.run_id or request_message.run_uuid
     _get_tracking_store().set_tag(run_id, tag)
     response_message = SetTag.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -866,8 +844,7 @@ def _delete_tag():
     )
     _get_tracking_store().delete_tag(request_message.run_id, request_message.key)
     response_message = DeleteTag.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -880,8 +857,7 @@ def _get_run():
     response_message = GetRun.Response()
     run_id = request_message.run_id or request_message.run_uuid
     response_message.run.MergeFrom(_get_tracking_store().get_run(run_id).to_proto())
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -912,8 +888,7 @@ def _search_runs():
     response_message.runs.extend([r.to_proto() for r in run_entities])
     if run_entities.token:
         response_message.next_page_token = run_entities.token
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -947,8 +922,7 @@ def _list_artifacts():
 
     response_message.files.extend([a.to_proto() for a in artifact_entities])
     response_message.root_uri = run.info.artifact_uri
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -1001,8 +975,7 @@ def _get_metric_history():
     run_id = request_message.run_id or request_message.run_uuid
     metric_entities = _get_tracking_store().get_metric_history(run_id, request_message.metric_key)
     response_message.metrics.extend([m.to_proto() for m in metric_entities])
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -1116,6 +1089,7 @@ def search_datasets_handler():
 def _search_experiments():
     request_message = _get_request_message(
         SearchExperiments(),
+        request,
         schema={
             "view_type": [_assert_intlike],
             "max_results": [_assert_intlike],
@@ -1135,8 +1109,7 @@ def _search_experiments():
     response_message.experiments.extend([e.to_proto() for e in experiment_entities])
     if experiment_entities.token:
         response_message.next_page_token = experiment_entities.token
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = Response(message_to_json(response_message))
     return response
 
 
@@ -1175,8 +1148,7 @@ def _log_batch():
         run_id=request_message.run_id, metrics=metrics, params=params, tags=tags
     )
     response_message = LogBatch.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -1211,14 +1183,12 @@ def _log_model():
         run_id=request_message.run_id, mlflow_model=Model.from_dict(model)
     )
     response_message = LogModel.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
 def _wrap_response(response_message):
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -1718,6 +1688,7 @@ def _download_artifact(artifact_path):
     tmp_dir = tempfile.TemporaryDirectory()
     artifact_repo = _get_artifact_repo_mlflow_artifacts()
     dst = artifact_repo.download_artifacts(artifact_path, tmp_dir.name)
+    filename = pathlib.Path(artifact_path).name
 
     # Ref: https://stackoverflow.com/a/24613980/6943581
     file_handle = open(dst, "rb")
@@ -1727,9 +1698,8 @@ def _download_artifact(artifact_path):
         file_handle.close()
         tmp_dir.cleanup()
 
-    file_sender_response = current_app.response_class(stream_and_remove_file())
-
-    return _response_with_file_attachment_headers(artifact_path, file_sender_response)
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    return StreamingResponse(stream_and_remove_file(), headers=headers)
 
 
 @catch_mlflow_exception
@@ -1778,8 +1748,7 @@ def _list_artifacts_mlflow_artifacts():
         files.append(new_file_info.to_proto())
     response_message = ListArtifacts.Response()
     response_message.files.extend(files)
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -1795,8 +1764,7 @@ def _delete_artifact_mlflow_artifacts(artifact_path):
     artifact_repo = _get_artifact_repo_mlflow_artifacts()
     artifact_repo.delete_artifacts(artifact_path)
     response_message = DeleteArtifact.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
