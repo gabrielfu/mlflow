@@ -10,8 +10,9 @@ import re
 import logging
 from functools import wraps
 
-from flask import request, current_app, send_file
+from flask import request
 from fastapi import Response
+from fastapi.responses import FileResponse, StreamingResponse
 from google.protobuf import descriptor
 from google.protobuf.json_format import ParseError
 
@@ -454,25 +455,12 @@ def _get_request_message(request_message, flask_request=None, schema=None):
     return request_message
 
 
-def _response_with_file_attachment_headers(file_path, response):
-    mime_type = _guess_mime_type(file_path)
-    filename = pathlib.Path(file_path).name
-    response.mimetype = mime_type
-    content_disposition_header_name = "Content-Disposition"
-    if content_disposition_header_name not in response.headers:
-        response.headers[content_disposition_header_name] = f"attachment; filename={filename}"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Content-Type"] = mime_type
-    return response
-
-
 def _send_artifact(artifact_repository, path):
     file_path = os.path.abspath(artifact_repository.download_artifacts(path))
+    filename = pathlib.Path(file_path).name
     # Always send artifacts as attachments to prevent the browser from displaying them on our web
     # server's domain, which might enable XSS.
-    mime_type = _guess_mime_type(file_path)
-    file_sender_response = send_file(file_path, mimetype=mime_type, as_attachment=True)
-    return _response_with_file_attachment_headers(file_path, file_sender_response)
+    return FileResponse(file_path, filename=filename, content_disposition_type="attachment")
 
 
 def catch_mlflow_exception(func):
@@ -542,26 +530,26 @@ def validate_path_is_safe(path):
 
 @catch_mlflow_exception
 def get_artifact_handler():
-    from querystring_parser import parser
+    # from querystring_parser import parser
+    #
+    # query_string = request.query_string.decode("utf-8")
+    # request_dict = parser.parse(query_string, normalized=True)
+    # run_id = request_dict.get("run_id") or request_dict.get("run_uuid")
+    # path = request_dict["path"]
+    # validate_path_is_safe(path)
+    # run = _get_tracking_store().get_run(run_id)
+    #
+    # if _is_servable_proxied_run_artifact_root(run.info.artifact_uri):
+    #     artifact_repo = _get_artifact_repo_mlflow_artifacts()
+    #     artifact_path = _get_proxied_run_artifact_destination_path(
+    #         proxied_artifact_root=run.info.artifact_uri,
+    #         relative_path=path,
+    #     )
+    # else:
+    #     artifact_repo = _get_artifact_repo(run)
+    #     artifact_path = path
 
-    query_string = request.query_string.decode("utf-8")
-    request_dict = parser.parse(query_string, normalized=True)
-    run_id = request_dict.get("run_id") or request_dict.get("run_uuid")
-    path = request_dict["path"]
-    validate_path_is_safe(path)
-    run = _get_tracking_store().get_run(run_id)
-
-    if _is_servable_proxied_run_artifact_root(run.info.artifact_uri):
-        artifact_repo = _get_artifact_repo_mlflow_artifacts()
-        artifact_path = _get_proxied_run_artifact_destination_path(
-            proxied_artifact_root=run.info.artifact_uri,
-            relative_path=path,
-        )
-    else:
-        artifact_repo = _get_artifact_repo(run)
-        artifact_path = path
-
-    return _send_artifact(artifact_repo, artifact_path)
+    return _send_artifact(None, None)
 
 
 def _not_implemented():
@@ -1701,6 +1689,7 @@ def _download_artifact(artifact_path):
     tmp_dir = tempfile.TemporaryDirectory()
     artifact_repo = _get_artifact_repo_mlflow_artifacts()
     dst = artifact_repo.download_artifacts(artifact_path, tmp_dir.name)
+    filename = pathlib.Path(artifact_path).name
 
     # Ref: https://stackoverflow.com/a/24613980/6943581
     file_handle = open(dst, "rb")
@@ -1710,9 +1699,8 @@ def _download_artifact(artifact_path):
         file_handle.close()
         tmp_dir.cleanup()
 
-    file_sender_response = current_app.response_class(stream_and_remove_file())
-
-    return _response_with_file_attachment_headers(artifact_path, file_sender_response)
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    return StreamingResponse(stream_and_remove_file(), headers=headers)
 
 
 @catch_mlflow_exception
