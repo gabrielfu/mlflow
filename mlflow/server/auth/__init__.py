@@ -12,9 +12,9 @@ import os
 from pathlib import Path
 from typing import Callable
 
-from flask import request, make_response, Response
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from flask import request
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Template
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -132,20 +132,18 @@ def is_unprotected_route(path: str) -> bool:
 
 
 def make_basic_auth_response() -> Response:
-    res = make_response()
-    res.status_code = 401
-    res.set_data(
+    return Response(
         "You are not authenticated. Please set the environment variables "
-        f"{MLFLOW_TRACKING_USERNAME.name} and {MLFLOW_TRACKING_PASSWORD.name}."
+        f"{MLFLOW_TRACKING_USERNAME.name} and {MLFLOW_TRACKING_PASSWORD.name}.",
+        status_code=401,
+        headers={
+            "WWW-Authenticate": 'Basic realm="mlflow"',
+        }
     )
-    res.headers["WWW-Authenticate"] = 'Basic realm="mlflow"'
-    return res
 
 
 def make_forbidden_response() -> Response:
-    res = make_response("Permission denied")
-    res.status_code = 403
-    return res
+    return Response("Permission denied", status_code=403)
 
 
 def _get_request_param(param: str) -> str:
@@ -683,16 +681,16 @@ def create_user():
         password = _get_request_param("password")
 
         user = store.create_user(username, password)
-        return make_response({"user": user.to_json()})
+        return JSONResponse({"user": user.to_json()})
     else:
-        return make_response(f"Invalid content type: '{content_type}'", 400)
+        return Response(f"Invalid content type: '{content_type}'", status_code=400)
 
 
 @catch_mlflow_exception
 def get_user():
     username = _get_request_param("username")
     user = store.get_user(username)
-    return make_response({"user": user.to_json()})
+    return JSONResponse({"user": user.to_json()})
 
 
 @catch_mlflow_exception
@@ -700,7 +698,7 @@ def update_user_password():
     username = _get_request_param("username")
     password = _get_request_param("password")
     store.update_user(username, password=password)
-    return make_response({})
+    return JSONResponse({})
 
 
 @catch_mlflow_exception
@@ -708,14 +706,14 @@ def update_user_admin():
     username = _get_request_param("username")
     is_admin = _get_request_param("is_admin")
     store.update_user(username, is_admin=is_admin)
-    return make_response({})
+    return JSONResponse({})
 
 
 @catch_mlflow_exception
 def delete_user():
     username = _get_request_param("username")
     store.delete_user(username)
-    return make_response({})
+    return JSONResponse({})
 
 
 @catch_mlflow_exception
@@ -724,7 +722,7 @@ def create_experiment_permission():
     username = _get_request_param("username")
     permission = _get_request_param("permission")
     ep = store.create_experiment_permission(experiment_id, username, permission)
-    return make_response({"experiment_permission": ep.to_json()})
+    return JSONResponse({"experiment_permission": ep.to_json()})
 
 
 @catch_mlflow_exception
@@ -732,7 +730,7 @@ def get_experiment_permission():
     experiment_id = _get_request_param("experiment_id")
     username = _get_request_param("username")
     ep = store.get_experiment_permission(experiment_id, username)
-    return make_response({"experiment_permission": ep.to_json()})
+    return JSONResponse({"experiment_permission": ep.to_json()})
 
 
 @catch_mlflow_exception
@@ -741,7 +739,7 @@ def update_experiment_permission():
     username = _get_request_param("username")
     permission = _get_request_param("permission")
     store.update_experiment_permission(experiment_id, username, permission)
-    return make_response({})
+    return JSONResponse({})
 
 
 @catch_mlflow_exception
@@ -749,7 +747,7 @@ def delete_experiment_permission():
     experiment_id = _get_request_param("experiment_id")
     username = _get_request_param("username")
     store.delete_experiment_permission(experiment_id, username)
-    return make_response({})
+    return JSONResponse({})
 
 
 @catch_mlflow_exception
@@ -758,7 +756,7 @@ def create_registered_model_permission():
     username = _get_request_param("username")
     permission = _get_request_param("permission")
     rmp = store.create_registered_model_permission(name, username, permission)
-    return make_response({"registered_model_permission": rmp.to_json()})
+    return JSONResponse({"registered_model_permission": rmp.to_json()})
 
 
 @catch_mlflow_exception
@@ -766,7 +764,7 @@ def get_registered_model_permission():
     name = _get_request_param("name")
     username = _get_request_param("username")
     rmp = store.get_registered_model_permission(name, username)
-    return make_response({"registered_model_permission": rmp.to_json()})
+    return JSONResponse({"registered_model_permission": rmp.to_json()})
 
 
 @catch_mlflow_exception
@@ -775,7 +773,7 @@ def update_registered_model_permission():
     username = _get_request_param("username")
     permission = _get_request_param("permission")
     store.update_registered_model_permission(name, username, permission)
-    return make_response({})
+    return JSONResponse({})
 
 
 @catch_mlflow_exception
@@ -783,7 +781,7 @@ def delete_registered_model_permission():
     name = _get_request_param("name")
     username = _get_request_param("username")
     store.delete_registered_model_permission(name, username)
-    return make_response({})
+    return JSONResponse({})
 
 
 async def _add_before_after_request(request: Request, call_next):
