@@ -1,15 +1,15 @@
 import os
-import pathlib
 import shlex
 import sys
 import textwrap
 import importlib.metadata
 import importlib
 import types
-from typing import Optional, Union, Any
+from typing import Union
 
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import guess_type
 
 from mlflow.exceptions import MlflowException
 from mlflow.server import handlers
@@ -21,16 +21,10 @@ from mlflow.server.handlers import (
     get_model_version_artifact_handler,
     search_datasets_handler,
 )
+from mlflow.server.middleware import middleware
 from mlflow.utils.process import _exec_cmd
 from mlflow.utils.os import is_windows
 from mlflow.version import VERSION
-
-from starlette.middleware import Middleware
-from starlette.requests import Request, HTTPConnection
-from starlette.responses import guess_type
-
-from starlette_context import plugins
-from starlette_context.middleware import RawContextMiddleware
 
 
 # NB: These are internal environment variables used for communication between
@@ -43,62 +37,10 @@ PROMETHEUS_EXPORTER_ENV_VAR = "prometheus_multiproc_dir"
 SERVE_ARTIFACTS_ENV_VAR = "_MLFLOW_SERVER_SERVE_ARTIFACTS"
 ARTIFACTS_ONLY_ENV_VAR = "_MLFLOW_SERVER_ARTIFACTS_ONLY"
 
-REL_STATIC_FOLDER = "js/build"
-STATIC_FOLDER = str((pathlib.Path(__file__).parent / REL_STATIC_FOLDER).resolve())
+REL_STATIC_DIR = "js/build"
 
-
-class QueryParamsPlugin(plugins.base.Plugin):
-    key = "query_params"
-
-    async def process_request(
-        self, request: Union[Request, HTTPConnection]
-    ) -> Optional[Any]:
-        assert isinstance(self.key, str)
-        return request.query_params
-
-
-class BodyPlugin(plugins.base.Plugin):
-    key = "body"
-
-    async def process_request(
-        self, request: Union[Request, HTTPConnection]
-    ) -> Optional[Any]:
-        assert isinstance(self.key, str)
-        if hasattr(request, "body"):
-            return await request.body()
-        return None
-
-
-class MethodPlugin(plugins.base.Plugin):
-    key = "method"
-
-    async def process_request(
-        self, request: Union[Request, HTTPConnection]
-    ) -> Optional[Any]:
-        assert isinstance(self.key, str)
-        return request.method
-
-
-class RequestContextMiddleware(RawContextMiddleware):
-    @staticmethod
-    def get_request_object(
-        scope, receive, send
-    ) -> Union[Request, HTTPConnection]:
-        return Request(scope, receive, send)
-
-
-middleware = [
-    Middleware(
-        RequestContextMiddleware,
-        plugins=(
-            QueryParamsPlugin(),
-            BodyPlugin(),
-            MethodPlugin(),
-        )
-    )
-]
 app = FastAPI(middleware=middleware)
-app.mount("/" + REL_STATIC_FOLDER, StaticFiles(directory=STATIC_FOLDER), name="static")
+app.mount("/" + REL_STATIC_DIR, StaticFiles(directory=REL_STATIC_DIR, check_dir=False), name="static")
 
 
 for http_path, handler, methods in handlers.get_endpoints():
@@ -154,7 +96,7 @@ def serve_search_datasets():
 # The files are hashed based on source code, so ok to send Cache-Control headers via max_age.
 @app.get(_add_static_prefix("/static-files/{path:path}"))
 def serve_static_file(path):
-    return _send_from_directory(STATIC_FOLDER, path)
+    return _send_from_directory(REL_STATIC_DIR, path)
 
 
 def _send_from_directory(
@@ -173,8 +115,8 @@ def _send_from_directory(
 # Serve the index.html for the React App for all other routes.
 @app.get(_add_static_prefix("/"))
 def serve():
-    if os.path.exists(os.path.join(STATIC_FOLDER, "index.html")):
-        return _send_from_directory(STATIC_FOLDER, "index.html")
+    if os.path.exists(os.path.join(REL_STATIC_DIR, "index.html")):
+        return _send_from_directory(REL_STATIC_DIR, "index.html")
 
     text = textwrap.dedent(
         """
