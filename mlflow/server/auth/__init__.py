@@ -8,12 +8,15 @@ Usage
 """
 
 import logging
-import uuid
 import os
 from pathlib import Path
 from typing import Callable
 
-from flask import Flask, request, make_response, Response, flash, render_template_string
+from flask import request, make_response, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from jinja2 import Template
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from mlflow import MlflowException
 from mlflow.entities import Experiment
@@ -381,7 +384,8 @@ BEFORE_REQUEST_VALIDATORS.update(
 
 
 @catch_mlflow_exception
-def _before_request():
+def _before_request(request):
+    return
     if is_unprotected_route(request.path):
         return
 
@@ -553,6 +557,7 @@ AFTER_REQUEST_HANDLERS = {
 
 @catch_mlflow_exception
 def _after_request(resp: Response):
+    return resp
     _logger.debug(f"after_request: {request.method} {request.path}")
     if 400 <= resp.status_code < 600:
         return resp
@@ -573,26 +578,21 @@ def create_admin_user(username, password):
         )
 
 
-def alert(href: str):
-    return render_template_string(
+def alert(message: str, href: str):
+    template = Template(
         r"""
 <script type = "text/javascript">
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    {% for message in messages %}
-      alert("{{ message }}");
-    {% endfor %}
-  {% endif %}
-{% endwith %}
-      window.location.href = "{{ href }}";
+  alert("{{ message }}");
+  window.location.href = "{{ href }}";
 </script>
-""",
-        href=href,
+"""
     )
+    html = template.render(href=href, message=message)
+    return HTMLResponse(html)
 
 
 def signup():
-    return render_template_string(
+    template = Template(
         r"""
 <style>
   form {
@@ -660,10 +660,10 @@ def signup():
   <br>
   <input type="submit" value="Sign up">
 </form>
-""",
-        mlflow_logo=MLFLOW_LOGO,
-        users_route=CREATE_USER,
+"""
     )
+    html = template.render(mlflow_logo=MLFLOW_LOGO, users_route=CREATE_USER)
+    return HTMLResponse(html)
 
 
 @catch_mlflow_exception
@@ -674,12 +674,10 @@ def create_user():
         password = request.form["password"]
 
         if store.has_user(username):
-            flash(f"Username has already been taken: {username}")
-            return alert(href=SIGNUP)
+            return alert(message=f"Username has already been taken: {username}", href=SIGNUP)
 
         store.create_user(username, password)
-        flash(f"Successfully signed up user: {username}")
-        return alert(href=HOME)
+        return alert(message=f"Successfully signed up user: {username}", href=HOME)
     elif content_type == "application/json":
         username = _get_request_param("username")
         password = _get_request_param("password")
@@ -788,7 +786,14 @@ def delete_registered_model_permission():
     return make_response({})
 
 
-def create_app(app: Flask = app):
+async def _add_before_after_request(request: Request, call_next):
+    if response := _before_request(request):
+        return response
+    response = await call_next(request)
+    return _after_request(response)
+
+
+def create_app(app: FastAPI = app):
     """
     A factory to enable authentication and authorization for the MLflow server.
 
@@ -798,86 +803,82 @@ def create_app(app: Flask = app):
     _logger.warning(
         "This feature is still experimental and may change in a future release without warning"
     )
-    # secret key required for flashing
-    if not app.secret_key:
-        app.secret_key = str(uuid.uuid4())
 
     _logger.debug("Database URI: %s", auth_config.database_uri)
     store.init_db(auth_config.database_uri)
     create_admin_user(auth_config.admin_username, auth_config.admin_password)
 
-    app.add_url_rule(
-        rule=SIGNUP,
-        view_func=signup,
+    app.add_api_route(
+        path=SIGNUP,
+        endpoint=signup,
         methods=["GET"],
     )
-    app.add_url_rule(
-        rule=CREATE_USER,
-        view_func=create_user,
+    app.add_api_route(
+        path=CREATE_USER,
+        endpoint=create_user,
         methods=["POST"],
     )
-    app.add_url_rule(
-        rule=GET_USER,
-        view_func=get_user,
+    app.add_api_route(
+        path=GET_USER,
+        endpoint=get_user,
         methods=["GET"],
     )
-    app.add_url_rule(
-        rule=UPDATE_USER_PASSWORD,
-        view_func=update_user_password,
+    app.add_api_route(
+        path=UPDATE_USER_PASSWORD,
+        endpoint=update_user_password,
         methods=["PATCH"],
     )
-    app.add_url_rule(
-        rule=UPDATE_USER_ADMIN,
-        view_func=update_user_admin,
+    app.add_api_route(
+        path=UPDATE_USER_ADMIN,
+        endpoint=update_user_admin,
         methods=["PATCH"],
     )
-    app.add_url_rule(
-        rule=DELETE_USER,
-        view_func=delete_user,
+    app.add_api_route(
+        path=DELETE_USER,
+        endpoint=delete_user,
         methods=["DELETE"],
     )
-    app.add_url_rule(
-        rule=CREATE_EXPERIMENT_PERMISSION,
-        view_func=create_experiment_permission,
+    app.add_api_route(
+        path=CREATE_EXPERIMENT_PERMISSION,
+        endpoint=create_experiment_permission,
         methods=["POST"],
     )
-    app.add_url_rule(
-        rule=GET_EXPERIMENT_PERMISSION,
-        view_func=get_experiment_permission,
+    app.add_api_route(
+        path=GET_EXPERIMENT_PERMISSION,
+        endpoint=get_experiment_permission,
         methods=["GET"],
     )
-    app.add_url_rule(
-        rule=UPDATE_EXPERIMENT_PERMISSION,
-        view_func=update_experiment_permission,
+    app.add_api_route(
+        path=UPDATE_EXPERIMENT_PERMISSION,
+        endpoint=update_experiment_permission,
         methods=["PATCH"],
     )
-    app.add_url_rule(
-        rule=DELETE_EXPERIMENT_PERMISSION,
-        view_func=delete_experiment_permission,
+    app.add_api_route(
+        path=DELETE_EXPERIMENT_PERMISSION,
+        endpoint=delete_experiment_permission,
         methods=["DELETE"],
     )
-    app.add_url_rule(
-        rule=CREATE_REGISTERED_MODEL_PERMISSION,
-        view_func=create_registered_model_permission,
+    app.add_api_route(
+        path=CREATE_REGISTERED_MODEL_PERMISSION,
+        endpoint=create_registered_model_permission,
         methods=["POST"],
     )
-    app.add_url_rule(
-        rule=GET_REGISTERED_MODEL_PERMISSION,
-        view_func=get_registered_model_permission,
+    app.add_api_route(
+        path=GET_REGISTERED_MODEL_PERMISSION,
+        endpoint=get_registered_model_permission,
         methods=["GET"],
     )
-    app.add_url_rule(
-        rule=UPDATE_REGISTERED_MODEL_PERMISSION,
-        view_func=update_registered_model_permission,
+    app.add_api_route(
+        path=UPDATE_REGISTERED_MODEL_PERMISSION,
+        endpoint=update_registered_model_permission,
         methods=["PATCH"],
     )
-    app.add_url_rule(
-        rule=DELETE_REGISTERED_MODEL_PERMISSION,
-        view_func=delete_registered_model_permission,
+    app.add_api_route(
+        path=DELETE_REGISTERED_MODEL_PERMISSION,
+        endpoint=delete_registered_model_permission,
         methods=["DELETE"],
     )
 
-    app.before_request(_before_request)
-    app.after_request(_after_request)
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_add_before_after_request)
 
     return app
