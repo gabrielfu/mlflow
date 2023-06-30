@@ -392,7 +392,7 @@ def _get_request_json():
     return json.loads(context.data["body"])
 
 
-def _get_request_message(request_message, flask_request: Request=request, schema=None):
+def _get_request_message(request_message, flask_request=None, schema=None):
     from querystring_parser import parser
 
     if context.data["method"] == "GET" and len(context.data["query_params"]) > 0:
