@@ -201,6 +201,8 @@ def _build_gunicorn_command(gunicorn_opts, host, port, workers, app_name):
         bind_address,
         "-w",
         str(workers),
+        "-k",
+        "uvicorn.workers.UvicornWorker",
         app_name,
     ]
 
