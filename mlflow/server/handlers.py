@@ -658,12 +658,11 @@ def _update_experiment():
     return response
 
 
-# @catch_mlflow_exception
-# @_disable_if_artifacts_only
-async def _create_run(request: Request):
-    request_message = await _get_request_message(
+@catch_mlflow_exception
+@_disable_if_artifacts_only
+def _create_run():
+    request_message = _get_request_message(
         CreateRun(),
-        request,
         schema={
             "experiment_id": [_assert_string],
             "start_time": [_assert_intlike],
