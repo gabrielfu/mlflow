@@ -51,29 +51,6 @@ class PathPlugin(plugins.base.Plugin):
         return request.scope["path"]
 
 
-class AuthorizationPlugin(plugins.base.Plugin):
-    key = "authorization"
-
-    async def process_request(
-        self, request: Union[Request, HTTPConnection]
-    ) -> Optional[Any]:
-        assert isinstance(self.key, str)
-        if auth := request.headers.get("authorization"):
-            try:
-                scheme, credentials = auth.split()
-                if scheme.lower() != "basic":
-                    return
-                decoded = base64.b64decode(credentials).decode("ascii")
-            except (ValueError, UnicodeDecodeError, binascii.Error):
-                raise AuthenticationError("Invalid basic auth credentials")
-
-            username, _, password = decoded.partition(":")
-            return {
-                "username": username,
-                "password": password,
-            }
-
-
 class RequestContextMiddleware(RawContextMiddleware):
     @staticmethod
     def get_request_object(
@@ -90,7 +67,6 @@ middleware = [
             BodyPlugin(),
             MethodPlugin(),
             PathPlugin(),
-            AuthorizationPlugin(),
         )
     )
 ]

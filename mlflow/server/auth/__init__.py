@@ -9,14 +9,22 @@ Usage
 
 import logging
 import os
+import binascii
+import inspect
+import base64
 from pathlib import Path
-from typing import Callable
+from typing import Callable, List, Dict, Optional, Union, Any
 
+from fastapi import Depends, FastAPI, HTTPException, status, APIRouter
+from fastapi.routing import APIRoute
+from fastapi.security import HTTPBasicCredentials
+from fastapi.security.utils import get_authorization_scheme_param
 from flask import request
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Template
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.routing import Route
 
 from mlflow import MlflowException
 from mlflow.entities import Experiment
@@ -121,6 +129,12 @@ auth_config_path = _get_auth_config_path()
 auth_config = read_auth_config(auth_config_path)
 store = SqlAlchemyStore()
 
+unauthorized_exc = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="You are not authenticated. Please set the environment variables "
+           f"{MLFLOW_TRACKING_USERNAME.name} and {MLFLOW_TRACKING_PASSWORD.name}.",
+    headers={"WWW-Authenticate": 'Basic realm="mlflow"'},
+)
 
 UNPROTECTED_ROUTES = [CREATE_USER, SIGNUP]
 
@@ -129,17 +143,6 @@ def is_unprotected_route(path: str) -> bool:
     if path.startswith(("/static", "/favicon.ico")):
         return True
     return path in UNPROTECTED_ROUTES
-
-
-def make_basic_auth_response() -> Response:
-    return Response(
-        "You are not authenticated. Please set the environment variables "
-        f"{MLFLOW_TRACKING_USERNAME.name} and {MLFLOW_TRACKING_PASSWORD.name}.",
-        status_code=401,
-        headers={
-            "WWW-Authenticate": 'Basic realm="mlflow"',
-        }
-    )
 
 
 def make_forbidden_response() -> Response:
@@ -381,24 +384,47 @@ BEFORE_REQUEST_VALIDATORS.update(
 )
 
 
+class MlflowHTTPBasic:
+    async def __call__(  # type: ignore
+        self, request: Request
+    ) -> Optional[HTTPBasicCredentials]:
+        authorization = request.headers.get("Authorization")
+        scheme, param = get_authorization_scheme_param(authorization)
+        if not authorization or scheme.lower() != "basic":
+            raise unauthorized_exc
+        try:
+            data = base64.b64decode(param).decode("ascii")
+        except (ValueError, UnicodeDecodeError, binascii.Error):
+            raise unauthorized_exc
+        username, separator, password = data.partition(":")
+        if not separator:
+            raise unauthorized_exc
+        return HTTPBasicCredentials(username=username, password=password)
+
+
+def validate_credentials(credentials: HTTPBasicCredentials = Depends(MlflowHTTPBasic())):
+    username = credentials.username
+    password = credentials.password
+    if not store.authenticate_user(username, password):
+        raise unauthorized_exc
+
+
+def add_basic_auth_dependency(app: FastAPI):
+    # Hacky way to add dependency on existing routes of an app
+    existing_routes = list(app.routes)
+    app.routes.clear()
+    for route in existing_routes:
+        args = route.__dict__
+        if isinstance(route, (Route, APIRoute)) and route.path not in UNPROTECTED_ROUTES:
+            args["dependencies"] = list(args.get("dependencies", [])) + [Depends(validate_credentials)]
+        arg_names = set(list(inspect.signature(route.__class__.__init__).parameters.keys()))
+        args = {k: v for k, v in args.items() if k in arg_names}
+        app.routes.append(route.__class__(**args))
+
+
 @catch_mlflow_exception
 def _before_request(request):
     return
-    if is_unprotected_route(request.path):
-        return
-
-    _user = request.authorization.username if request.authorization else None
-    _logger.debug(f"before_request: {request.method} {request.path} (user: {_user})")
-
-    if request.authorization is None:
-        return make_basic_auth_response()
-
-    username = request.authorization.username
-    password = request.authorization.password
-    if not store.authenticate_user(username, password):
-        # let user attempt login again
-        return make_basic_auth_response()
-
     # admins don't need to be authorized
     if sender_is_admin():
         _logger.debug(f"Admin (username={username}) authorization not required")
@@ -877,6 +903,7 @@ def create_app(app: FastAPI = app):
         methods=["DELETE"],
     )
 
+    add_basic_auth_dependency(app)
     app.add_middleware(BaseHTTPMiddleware, dispatch=_add_before_after_request)
 
     return app
