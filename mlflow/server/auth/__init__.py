@@ -12,8 +12,9 @@ import os
 import binascii
 import inspect
 import base64
+from functools import wraps
 from pathlib import Path
-from typing import Callable, List, Dict, Optional, Union, Any
+from typing import Callable, List, Dict, Optional, Union, Any, Coroutine
 
 from fastapi import Depends, FastAPI, HTTPException, status, APIRouter
 from fastapi.routing import APIRoute
@@ -63,7 +64,7 @@ from mlflow.protos.databricks_pb2 import (
     ErrorCode,
     BAD_REQUEST,
     INVALID_PARAMETER_VALUE,
-    RESOURCE_DOES_NOT_EXIST,
+    RESOURCE_DOES_NOT_EXIST, UNAUTHENTICATED, PERMISSION_DENIED,
 )
 from mlflow.protos.service_pb2 import (
     GetExperiment,
@@ -129,10 +130,10 @@ auth_config_path = _get_auth_config_path()
 auth_config = read_auth_config(auth_config_path)
 store = SqlAlchemyStore()
 
-unauthorized_exc = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="You are not authenticated. Please set the environment variables "
-           f"{MLFLOW_TRACKING_USERNAME.name} and {MLFLOW_TRACKING_PASSWORD.name}.",
+unauthorized_exc = MlflowException(
+    "You are not authenticated. Please set the environment variables "
+    f"{MLFLOW_TRACKING_USERNAME.name} and {MLFLOW_TRACKING_PASSWORD.name}.",
+    error_code=UNAUTHENTICATED,
     headers={"WWW-Authenticate": 'Basic realm="mlflow"'},
 )
 
@@ -384,7 +385,38 @@ BEFORE_REQUEST_VALIDATORS.update(
 )
 
 
+def fastapi_catch_mlflow_exception(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except MlflowException as e:
+            raise HTTPException(
+                status_code=e.get_http_status_code(),
+                detail=e.serialize_as_json(),
+                headers=e.headers,
+            )
+
+    return wrapper
+
+
+def fastapi_async_catch_mlflow_exception(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except MlflowException as e:
+            raise HTTPException(
+                status_code=e.get_http_status_code(),
+                detail=e.serialize_as_json(),
+                headers=e.headers,
+            )
+
+    return wrapper
+
+
 class MlflowHTTPBasic:
+    @fastapi_async_catch_mlflow_exception
     async def __call__(  # type: ignore
         self, request: Request
     ) -> Optional[HTTPBasicCredentials]:
@@ -402,11 +434,28 @@ class MlflowHTTPBasic:
         return HTTPBasicCredentials(username=username, password=password)
 
 
-def validate_credentials(credentials: HTTPBasicCredentials = Depends(MlflowHTTPBasic())):
+@fastapi_catch_mlflow_exception
+def validate_credentials(request: Request, credentials: HTTPBasicCredentials = Depends(MlflowHTTPBasic())):
     username = credentials.username
     password = credentials.password
     if not store.authenticate_user(username, password):
         raise unauthorized_exc
+
+    if store.get_user(username).is_admin:
+        return
+
+    # authorization
+    path = request.scope["path"]
+    method = request.method
+    if validator := BEFORE_REQUEST_VALIDATORS.get((path, method)):
+        _logger.debug(f"Calling validator: {validator.__name__}")
+        if not validator():
+            raise MlflowException(
+                "Permission denied",
+                PERMISSION_DENIED,
+            )
+    else:
+        _logger.debug(f"No validator found for {(path, method)}")
 
 
 def add_basic_auth_dependency(app: FastAPI):
@@ -422,21 +471,8 @@ def add_basic_auth_dependency(app: FastAPI):
         app.routes.append(route.__class__(**args))
 
 
-@catch_mlflow_exception
 def _before_request(request):
     return
-    # admins don't need to be authorized
-    if sender_is_admin():
-        _logger.debug(f"Admin (username={username}) authorization not required")
-        return
-
-    # authorization
-    if validator := BEFORE_REQUEST_VALIDATORS.get((request.path, request.method)):
-        _logger.debug(f"Calling validator: {validator.__name__}")
-        if not validator():
-            return make_forbidden_response()
-    else:
-        _logger.debug(f"No validator found for {(request.path, request.method)}")
 
 
 def set_can_manage_experiment_permission(resp: Response):
