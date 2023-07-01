@@ -442,6 +442,7 @@ def validate_credentials(request: Request, credentials: HTTPBasicCredentials = D
         raise unauthorized_exc
 
     if store.get_user(username).is_admin:
+        _logger.debug(f"Admin (username={username}) authorization not required")
         return
 
     # authorization
