@@ -7,11 +7,9 @@ import posixpath
 import urllib
 import pathlib
 import re
-
 import logging
 from functools import wraps
 
-from flask import request
 from fastapi import Response, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.requests import Request
