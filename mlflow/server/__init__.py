@@ -21,7 +21,6 @@ from mlflow.server.handlers import (
     get_model_version_artifact_handler,
     search_datasets_handler,
 )
-from mlflow.server.middleware import middleware
 from mlflow.utils.process import _exec_cmd
 from mlflow.utils.os import is_windows
 from mlflow.version import VERSION
@@ -39,7 +38,7 @@ ARTIFACTS_ONLY_ENV_VAR = "_MLFLOW_SERVER_ARTIFACTS_ONLY"
 
 REL_STATIC_DIR = "js/build"
 
-app = FastAPI(middleware=middleware)
+app = FastAPI()
 app.mount("/" + REL_STATIC_DIR, StaticFiles(directory=REL_STATIC_DIR, check_dir=False), name="static")
 
 
