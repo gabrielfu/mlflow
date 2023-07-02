@@ -30,7 +30,7 @@ from starlette.routing import Route
 from mlflow import MlflowException
 from mlflow.entities import Experiment
 from mlflow.entities.model_registry import RegisteredModel
-from mlflow.server import app
+from mlflow.server import router as mlflow_router
 from mlflow.server.auth.config import read_auth_config
 from mlflow.server.auth.logo import MLFLOW_LOGO
 from mlflow.server.auth.permissions import get_permission, Permission, MANAGE
@@ -64,7 +64,9 @@ from mlflow.protos.databricks_pb2 import (
     ErrorCode,
     BAD_REQUEST,
     INVALID_PARAMETER_VALUE,
-    RESOURCE_DOES_NOT_EXIST, UNAUTHENTICATED, PERMISSION_DENIED,
+    RESOURCE_DOES_NOT_EXIST,
+    UNAUTHENTICATED,
+    PERMISSION_DENIED,
 )
 from mlflow.protos.service_pb2 import (
     GetExperiment,
@@ -129,6 +131,8 @@ def _get_auth_config_path():
 auth_config_path = _get_auth_config_path()
 auth_config = read_auth_config(auth_config_path)
 store = SqlAlchemyStore()
+
+router = APIRouter()
 
 unauthorized_exc = MlflowException(
     "You are not authenticated. Please set the environment variables "
@@ -417,9 +421,7 @@ def fastapi_async_catch_mlflow_exception(func):
 
 class MlflowHTTPBasic:
     @fastapi_async_catch_mlflow_exception
-    async def __call__(  # type: ignore
-        self, request: Request
-    ) -> Optional[HTTPBasicCredentials]:
+    async def __call__(self, request: Request) -> Optional[HTTPBasicCredentials]:  # type: ignore
         authorization = request.headers.get("Authorization")
         scheme, param = get_authorization_scheme_param(authorization)
         if not authorization or scheme.lower() != "basic":
@@ -435,7 +437,9 @@ class MlflowHTTPBasic:
 
 
 @fastapi_catch_mlflow_exception
-def validate_credentials(request: Request, credentials: HTTPBasicCredentials = Depends(MlflowHTTPBasic())):
+def validate_credentials(
+    request: Request, credentials: HTTPBasicCredentials = Depends(MlflowHTTPBasic())
+):
     username = credentials.username
     password = credentials.password
     if not store.authenticate_user(username, password):
@@ -457,19 +461,6 @@ def validate_credentials(request: Request, credentials: HTTPBasicCredentials = D
             )
     else:
         _logger.debug(f"No validator found for {(path, method)}")
-
-
-def add_basic_auth_dependency(app: FastAPI):
-    # Hacky way to add dependency on existing routes of an app
-    existing_routes = list(app.routes)
-    app.routes.clear()
-    for route in existing_routes:
-        args = route.__dict__
-        if isinstance(route, (Route, APIRoute)) and route.path not in UNPROTECTED_ROUTES:
-            args["dependencies"] = list(args.get("dependencies", [])) + [Depends(validate_credentials)]
-        arg_names = set(list(inspect.signature(route.__class__.__init__).parameters.keys()))
-        args = {k: v for k, v in args.items() if k in arg_names}
-        app.routes.append(route.__class__(**args))
 
 
 def _before_request(request):
@@ -854,11 +845,10 @@ async def _add_before_after_request(request: Request, call_next):
     return _after_request(response)
 
 
-def create_app(app: FastAPI = app):
+def create_app():
     """
     A factory to enable authentication and authorization for the MLflow server.
 
-    :param app: The Flask app to enable authentication and authorization for.
     :return: The app with authentication and authorization enabled.
     """
     _logger.warning(
@@ -869,78 +859,80 @@ def create_app(app: FastAPI = app):
     store.init_db(auth_config.database_uri)
     create_admin_user(auth_config.admin_username, auth_config.admin_password)
 
-    app.add_api_route(
+    router.add_api_route(
         path=SIGNUP,
         endpoint=signup,
         methods=["GET"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=CREATE_USER,
         endpoint=create_user,
         methods=["POST"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=GET_USER,
         endpoint=get_user,
         methods=["GET"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=UPDATE_USER_PASSWORD,
         endpoint=update_user_password,
         methods=["PATCH"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=UPDATE_USER_ADMIN,
         endpoint=update_user_admin,
         methods=["PATCH"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=DELETE_USER,
         endpoint=delete_user,
         methods=["DELETE"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=CREATE_EXPERIMENT_PERMISSION,
         endpoint=create_experiment_permission,
         methods=["POST"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=GET_EXPERIMENT_PERMISSION,
         endpoint=get_experiment_permission,
         methods=["GET"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=UPDATE_EXPERIMENT_PERMISSION,
         endpoint=update_experiment_permission,
         methods=["PATCH"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=DELETE_EXPERIMENT_PERMISSION,
         endpoint=delete_experiment_permission,
         methods=["DELETE"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=CREATE_REGISTERED_MODEL_PERMISSION,
         endpoint=create_registered_model_permission,
         methods=["POST"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=GET_REGISTERED_MODEL_PERMISSION,
         endpoint=get_registered_model_permission,
         methods=["GET"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=UPDATE_REGISTERED_MODEL_PERMISSION,
         endpoint=update_registered_model_permission,
         methods=["PATCH"],
     )
-    app.add_api_route(
+    router.add_api_route(
         path=DELETE_REGISTERED_MODEL_PERMISSION,
         endpoint=delete_registered_model_permission,
         methods=["DELETE"],
     )
+    router.include_router(mlflow_router)
 
-    add_basic_auth_dependency(app)
+    app = FastAPI()
     app.add_middleware(BaseHTTPMiddleware, dispatch=_add_before_after_request)
+    app.include_router(router, dependencies=[Depends(validate_credentials)])
 
     return app

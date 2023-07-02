@@ -7,7 +7,7 @@ import importlib
 import types
 from typing import Union
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, APIRouter
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import guess_type
 
@@ -38,12 +38,14 @@ ARTIFACTS_ONLY_ENV_VAR = "_MLFLOW_SERVER_ARTIFACTS_ONLY"
 
 REL_STATIC_DIR = "js/build"
 
-app = FastAPI()
-app.mount("/" + REL_STATIC_DIR, StaticFiles(directory=REL_STATIC_DIR, check_dir=False), name="static")
+router = APIRouter()
+router.mount(
+    "/" + REL_STATIC_DIR, StaticFiles(directory=REL_STATIC_DIR, check_dir=False), name="static"
+)
 
 
 for http_path, handler, methods in handlers.get_endpoints():
-    app.add_api_route(http_path, handler, methods=methods)
+    router.add_api_route(http_path, handler, methods=methods)
 
 if os.getenv(PROMETHEUS_EXPORTER_ENV_VAR):
     from mlflow.server.prometheus_exporter import activate_prometheus_exporter
@@ -51,41 +53,41 @@ if os.getenv(PROMETHEUS_EXPORTER_ENV_VAR):
     prometheus_metrics_path = os.getenv(PROMETHEUS_EXPORTER_ENV_VAR)
     if not os.path.exists(prometheus_metrics_path):
         os.makedirs(prometheus_metrics_path)
-    activate_prometheus_exporter(app)
+    activate_prometheus_exporter(router)
 
 
 # Provide a health check endpoint to ensure the application is responsive
-@app.get("/health")
+@router.get("/health")
 def health():
     return "OK", 200
 
 
 # Provide an endpoint to query the version of mlflow running on the server
-@app.get("/version")
+@router.get("/version")
 def version():
     return VERSION, 200
 
 
 # Serve the "get-artifact" route.
-@app.get(_add_static_prefix("/get-artifact"))
+@router.get(_add_static_prefix("/get-artifact"))
 def serve_artifacts():
     return get_artifact_handler()
 
 
 # Serve the "model-versions/get-artifact" route.
-@app.get(_add_static_prefix("/model-versions/get-artifact"))
+@router.get(_add_static_prefix("/model-versions/get-artifact"))
 def serve_model_version_artifact():
     return get_model_version_artifact_handler()
 
 
 # Serve the "metrics/get-history-bulk" route.
-@app.get(_add_static_prefix("/ajax-api/2.0/mlflow/metrics/get-history-bulk"))
+@router.get(_add_static_prefix("/ajax-api/2.0/mlflow/metrics/get-history-bulk"))
 def serve_get_metric_history_bulk():
     return get_metric_history_bulk_handler()
 
 
 # Serve the "experiments/search-datasets" route.
-@app.get(_add_static_prefix("/ajax-api/2.0/mlflow/experiments/search-datasets"))
+@router.get(_add_static_prefix("/ajax-api/2.0/mlflow/experiments/search-datasets"))
 def serve_search_datasets():
     return search_datasets_handler()
 
@@ -93,7 +95,7 @@ def serve_search_datasets():
 # We expect the react app to be built assuming it is hosted at /static-files, so that requests for
 # CSS/JS resources will be made to e.g. /static-files/main.css and we can handle them here.
 # The files are hashed based on source code, so ok to send Cache-Control headers via max_age.
-@app.get(_add_static_prefix("/static-files/{path:path}"))
+@router.get(_add_static_prefix("/static-files/{path:path}"))
 def serve_static_file(path):
     return _send_from_directory(REL_STATIC_DIR, path)
 
@@ -112,7 +114,7 @@ def _send_from_directory(
 
 
 # Serve the index.html for the React App for all other routes.
-@app.get(_add_static_prefix("/"))
+@router.get(_add_static_prefix("/"))
 def serve():
     if os.path.exists(os.path.join(REL_STATIC_DIR, "index.html")):
         return _send_from_directory(REL_STATIC_DIR, "index.html")
@@ -133,6 +135,12 @@ def serve():
     """
     )
     return Response(text, media_type="text/plain")
+
+
+def create_app():
+    app = FastAPI()
+    app.include_router(router)
+    return app
 
 
 def _find_app(app_name: str) -> str:
@@ -247,15 +255,11 @@ def _run_server(
     if expose_prometheus:
         env_map[PROMETHEUS_EXPORTER_ENV_VAR] = expose_prometheus
 
-    if app_name is None:
-        app = f"{__name__}:app"
-        is_factory = False
-    else:
-        app = _find_app(app_name)
-        is_factory = _is_factory(app)
-        # `uvicorn` doesn't support `()` syntax for factory functions.
-        # Instead, we need to use the `--factory` flag.
-        app = f"{app}()" if (not is_windows() and is_factory) else app
+    app = f"{__name__}:create_app" if app_name is None else _find_app(app_name)
+    is_factory = _is_factory(app)
+    # `uvicorn` doesn't support `()` syntax for factory functions.
+    # Instead, we need to use the `--factory` flag.
+    app = f"{app}()" if (not is_windows() and is_factory) else app
 
     # TODO: eventually may want waitress on non-win32
     if sys.platform == "win32":

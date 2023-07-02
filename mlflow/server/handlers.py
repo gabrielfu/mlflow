@@ -1131,8 +1131,7 @@ def _search_experiments(
     response_message.experiments.extend([e.to_proto() for e in experiment_entities])
     if experiment_entities.token:
         response_message.next_page_token = experiment_entities.token
-    response = JSONResponse(message_to_json(response_message))
-    return response
+    return Response(message_to_json(response_message), media_type="application/json")
 
 
 @catch_mlflow_exception
