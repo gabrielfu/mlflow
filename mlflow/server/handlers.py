@@ -1,4 +1,5 @@
 # Define all the service endpoint handlers here.
+import functools
 import json
 import os
 import tempfile
@@ -11,8 +12,10 @@ import logging
 from functools import wraps
 
 from flask import request
-from fastapi import Response
+from fastapi import Response, Depends
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from google.protobuf import descriptor
 from google.protobuf.json_format import ParseError
 
@@ -83,7 +86,6 @@ from mlflow.store.artifact.artifact_repository_registry import get_artifact_repo
 from mlflow.store.db.db_types import DATABASE_ENGINES
 from mlflow.tracking._model_registry.registry import ModelRegistryStoreRegistry
 from mlflow.tracking._tracking_service.registry import TrackingStoreRegistry
-from mlflow.utils.mime_type_utils import _guess_mime_type
 from mlflow.utils.proto_json_utils import message_to_json, parse_dict
 from mlflow.utils.validation import _validate_batch_log_api_req
 from mlflow.utils.string_utils import is_string_type
@@ -91,11 +93,6 @@ from mlflow.utils.uri import is_local_uri, is_file_uri
 from mlflow.utils.file_utils import local_file_uri_to_path
 from mlflow.tracking.registry import UnsupportedModelRegistryStoreURIException
 from mlflow.environment_variables import MLFLOW_ALLOW_FILE_URI_AS_MODEL_VERSION_SOURCE
-
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-
-from starlette_context import context
 
 _logger = logging.getLogger(__name__)
 _tracking_store = None
@@ -389,20 +386,20 @@ def _validate_param_against_schema(schema, param, value, proto_parsing_succeeded
     return None
 
 
-def _get_request_json():
-    return json.loads(context.data["body"])
+def _get_request_json(request: Request):
+    return request.json()
 
 
-def _get_request_message(request_message, flask_request=None, schema=None):
+def _get_request_message(request: Request, request_message, schema=None):
     from querystring_parser import parser
 
-    if context.data["method"] == "GET" and len(context.data["query_params"]) > 0:
+    if request.method == "GET" and len(request.query_params) > 0:
         # This is a hack to make arrays of length 1 work with the parser.
         # for example experiment_ids%5B%5D=0 should be parsed to {experiment_ids: [0]}
         # but it gets parsed to {experiment_ids: 0}
         # but it doesn't. However, experiment_ids%5B0%5D=0 will get parsed to the right
         # result.
-        query_string = re.sub("%5B%5D", "%5B0%5D", str(context.data["query_params"]))
+        query_string = re.sub("%5B%5D", "%5B0%5D", str(request.query_params))
         request_dict = parser.parse(query_string, normalized=True)
         # Convert atomic values of repeated fields to lists before calling protobuf deserialization.
         # Context: We parse the parameter string into a dictionary outside of protobuf since
@@ -420,7 +417,7 @@ def _get_request_message(request_message, flask_request=None, schema=None):
         parse_dict(request_dict, request_message)
         return request_message
 
-    request_json = _get_request_json()
+    request_json = _get_request_json(request)
 
     # Older clients may post their JSON double-encoded as strings, so the get_json
     # above actually converts it to a string. Therefore, we check this condition
@@ -453,6 +450,10 @@ def _get_request_message(request_message, flask_request=None, schema=None):
             )
 
     return request_message
+
+
+def _request_message_getter(request_message, schema):
+    return functools.partial(_get_request_message, request_message=request_message, schema=schema)
 
 
 def _send_artifact(artifact_repository, path):
@@ -579,7 +580,8 @@ def _create_experiment():
     )
     response_message = CreateExperiment.Response()
     response_message.experiment_id = experiment_id
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -592,7 +594,8 @@ def _get_experiment():
     response_message = GetExperiment.Response()
     experiment = _get_tracking_store().get_experiment(request_message.experiment_id).to_proto()
     response_message.experiment.MergeFrom(experiment)
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -611,7 +614,8 @@ def _get_experiment_by_name():
         )
     experiment = store_exp.to_proto()
     response_message.experiment.MergeFrom(experiment)
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -623,7 +627,8 @@ def _delete_experiment():
     )
     _get_tracking_store().delete_experiment(request_message.experiment_id)
     response_message = DeleteExperiment.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -635,7 +640,8 @@ def _restore_experiment():
     )
     _get_tracking_store().restore_experiment(request_message.experiment_id)
     response_message = RestoreExperiment.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -654,7 +660,8 @@ def _update_experiment():
             request_message.experiment_id, request_message.new_name
         )
     response_message = UpdateExperiment.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -681,7 +688,8 @@ def _create_run():
 
     response_message = CreateRun.Response()
     response_message.run.MergeFrom(run.to_proto())
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -703,7 +711,8 @@ def _update_run():
     status = request_message.status if request_message.HasField("status") else None
     updated_info = _get_tracking_store().update_run_info(run_id, status, end_time, run_name)
     response_message = UpdateRun.Response(run_info=updated_info.to_proto())
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -715,7 +724,8 @@ def _delete_run():
     )
     _get_tracking_store().delete_run(request_message.run_id)
     response_message = DeleteRun.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -727,7 +737,8 @@ def _restore_run():
     )
     _get_tracking_store().restore_run(request_message.run_id)
     response_message = RestoreRun.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -750,7 +761,8 @@ def _log_metric():
     run_id = request_message.run_id or request_message.run_uuid
     _get_tracking_store().log_metric(run_id, metric)
     response_message = LogMetric.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -769,7 +781,8 @@ def _log_param():
     run_id = request_message.run_id or request_message.run_uuid
     _get_tracking_store().log_param(run_id, param)
     response_message = LogParam.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -791,7 +804,8 @@ def _log_inputs():
 
     _get_tracking_store().log_inputs(run_id, datasets=datasets)
     response_message = LogInputs.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -809,7 +823,8 @@ def _set_experiment_tag():
     tag = ExperimentTag(request_message.key, request_message.value)
     _get_tracking_store().set_experiment_tag(request_message.experiment_id, tag)
     response_message = SetExperimentTag.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -828,7 +843,8 @@ def _set_tag():
     run_id = request_message.run_id or request_message.run_uuid
     _get_tracking_store().set_tag(run_id, tag)
     response_message = SetTag.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -844,7 +860,8 @@ def _delete_tag():
     )
     _get_tracking_store().delete_tag(request_message.run_id, request_message.key)
     response_message = DeleteTag.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -857,7 +874,8 @@ def _get_run():
     response_message = GetRun.Response()
     run_id = request_message.run_id or request_message.run_uuid
     response_message.run.MergeFrom(_get_tracking_store().get_run(run_id).to_proto())
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -888,7 +906,8 @@ def _search_runs():
     response_message.runs.extend([r.to_proto() for r in run_entities])
     if run_entities.token:
         response_message.next_page_token = run_entities.token
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -922,7 +941,8 @@ def _list_artifacts():
 
     response_message.files.extend([a.to_proto() for a in artifact_entities])
     response_message.root_uri = run.info.artifact_uri
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -975,7 +995,8 @@ def _get_metric_history():
     run_id = request_message.run_id or request_message.run_uuid
     metric_entities = _get_tracking_store().get_metric_history(run_id, request_message.metric_key)
     response_message.metrics.extend([m.to_proto() for m in metric_entities])
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -1086,18 +1107,20 @@ def search_datasets_handler():
 
 @catch_mlflow_exception
 @_disable_if_artifacts_only
-def _search_experiments():
-    request_message = _get_request_message(
-        SearchExperiments(),
-        request,
-        schema={
-            "view_type": [_assert_intlike],
-            "max_results": [_assert_intlike],
-            "order_by": [_assert_array],
-            "filter": [_assert_string],
-            "page_token": [_assert_string],
-        },
+def _search_experiments(
+    request_message=Depends(
+        _request_message_getter(
+            SearchExperiments(),
+            schema={
+                "view_type": [_assert_intlike],
+                "max_results": [_assert_intlike],
+                "order_by": [_assert_array],
+                "filter": [_assert_string],
+                "page_token": [_assert_string],
+            },
+        )
     )
+):
     experiment_entities = _get_tracking_store().search_experiments(
         view_type=request_message.view_type,
         max_results=request_message.max_results,
@@ -1109,7 +1132,7 @@ def _search_experiments():
     response_message.experiments.extend([e.to_proto() for e in experiment_entities])
     if experiment_entities.token:
         response_message.next_page_token = experiment_entities.token
-    response = Response(message_to_json(response_message))
+    response = JSONResponse(message_to_json(response_message))
     return response
 
 
@@ -1148,7 +1171,8 @@ def _log_batch():
         run_id=request_message.run_id, metrics=metrics, params=params, tags=tags
     )
     response_message = LogBatch.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -1183,12 +1207,14 @@ def _log_model():
         run_id=request_message.run_id, mlflow_model=Model.from_dict(model)
     )
     response_message = LogModel.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
 def _wrap_response(response_message):
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -1748,7 +1774,8 @@ def _list_artifacts_mlflow_artifacts():
         files.append(new_file_info.to_proto())
     response_message = ListArtifacts.Response()
     response_message.files.extend(files)
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
@@ -1764,7 +1791,8 @@ def _delete_artifact_mlflow_artifacts(artifact_path):
     artifact_repo = _get_artifact_repo_mlflow_artifacts()
     artifact_repo.delete_artifacts(artifact_path)
     response_message = DeleteArtifact.Response()
-    response = JSONResponse(message_to_json(response_message))
+    response = Response(mimetype="application/json")
+    response.set_data(message_to_json(response_message))
     return response
 
 
