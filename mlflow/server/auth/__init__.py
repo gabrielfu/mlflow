@@ -18,7 +18,7 @@ from typing import Callable, List, Dict, Optional, Union, Any, Coroutine
 
 from fastapi import Depends, FastAPI, HTTPException, status, APIRouter
 from fastapi.routing import APIRoute
-from fastapi.security import HTTPBasicCredentials
+from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from fastapi.security.utils import get_authorization_scheme_param
 from flask import request
 from fastapi import FastAPI, Request, Response
@@ -419,26 +419,9 @@ def fastapi_async_catch_mlflow_exception(func):
     return wrapper
 
 
-class MlflowHTTPBasic:
-    @fastapi_async_catch_mlflow_exception
-    async def __call__(self, request: Request) -> Optional[HTTPBasicCredentials]:  # type: ignore
-        authorization = request.headers.get("Authorization")
-        scheme, param = get_authorization_scheme_param(authorization)
-        if not authorization or scheme.lower() != "basic":
-            raise unauthorized_exc
-        try:
-            data = base64.b64decode(param).decode("ascii")
-        except (ValueError, UnicodeDecodeError, binascii.Error):
-            raise unauthorized_exc
-        username, separator, password = data.partition(":")
-        if not separator:
-            raise unauthorized_exc
-        return HTTPBasicCredentials(username=username, password=password)
-
-
 @fastapi_catch_mlflow_exception
 def validate_credentials(
-    request: Request, credentials: HTTPBasicCredentials = Depends(MlflowHTTPBasic())
+    request: Request, credentials: HTTPBasicCredentials = Depends(HTTPBasic())
 ):
     username = credentials.username
     password = credentials.password
