@@ -9,23 +9,17 @@ Usage
 
 import logging
 import os
-import binascii
-import inspect
-import base64
 from functools import wraps
 from pathlib import Path
-from typing import Callable, List, Dict, Optional, Union, Any, Coroutine
+from typing import Callable
 
-from fastapi import Depends, FastAPI, HTTPException, status, APIRouter
-from fastapi.routing import APIRoute
+from fastapi import Depends, HTTPException, APIRouter
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
-from fastapi.security.utils import get_authorization_scheme_param
 from flask import request
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Template
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.routing import Route
 
 from mlflow import MlflowException
 from mlflow.entities import Experiment
@@ -423,6 +417,10 @@ def fastapi_async_catch_mlflow_exception(func):
 def validate_credentials(
     request: Request, credentials: HTTPBasicCredentials = Depends(HTTPBasic())
 ):
+    path = request.scope["path"]
+    if path in UNPROTECTED_ROUTES:
+        return
+
     username = credentials.username
     password = credentials.password
     if not store.authenticate_user(username, password):
@@ -433,7 +431,6 @@ def validate_credentials(
         return
 
     # authorization
-    path = request.scope["path"]
     method = request.method
     if validator := BEFORE_REQUEST_VALIDATORS.get((path, method)):
         _logger.debug(f"Calling validator: {validator.__name__}")
@@ -846,6 +843,7 @@ def create_app():
         path=SIGNUP,
         endpoint=signup,
         methods=["GET"],
+        description="let user signup",
     )
     router.add_api_route(
         path=CREATE_USER,
