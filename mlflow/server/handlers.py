@@ -1,5 +1,4 @@
 # Define all the service endpoint handlers here.
-import functools
 import inspect
 import json
 import os
@@ -10,7 +9,7 @@ import pathlib
 import re
 
 import logging
-from functools import wraps
+from functools import wraps, update_wrapper, partial
 from typing import Optional
 
 from fastapi import Response, Depends, Body
@@ -456,7 +455,7 @@ async def _get_request_message(request: Request, request_message, schema=None):
 
 
 def _request_message_getter(request_message, schema):
-    return functools.partial(_get_request_message, request_message=request_message, schema=schema)
+    return partial(_get_request_message, request_message=request_message, schema=schema)
 
 
 def _send_artifact(artifact_repository, path):
@@ -565,20 +564,40 @@ def _not_implemented():
 # Tracking Server APIs
 
 
-async def _create_experiment(
-        request: Request,
-        params: make_body_parameter_type(CreateExperiment),
-):
-    request_message = await _get_request_message(
-        request,
-        CreateExperiment(),
-        schema={
-            "name": [_assert_required, _assert_string],
-            "artifact_location": [_assert_string],
-            "tags": [_assert_array],
-        },
-    )
+def handler_with_body(message, schema):
+    def decorator(func):
+        async def wrapper(request: Request, params: make_body_parameter_type(message) = None):
+            # pylint: disable=unused-argument
+            request_message = await _get_request_message(request, message(), schema)
+            return await func(request_message)
+        wrapper.__name__ = func.__name__
+        wrapper.__doc__ = func.__doc__
+        return wrapper
+    return decorator
 
+
+def handler_with_query(message, schema):
+    def decorator(func):
+        async def wrapper(request: Request, params: message2pydantic(message) = Depends()):
+            # pylint: disable=unused-argument
+            request_message = await _get_request_message(request, message(), schema)
+            return await func(request_message)
+        wrapper.__name__ = func.__name__
+        wrapper.__doc__ = func.__doc__
+        return wrapper
+    return decorator
+
+
+@handler_with_body(
+    message=CreateExperiment,
+    schema={
+        "name": [_assert_required, _assert_string],
+        "artifact_location": [_assert_string],
+        "tags": [_assert_array],
+    },
+)
+async def _create_experiment(request_message):
+    """Some description about create experiment endpoint"""
     tags = [ExperimentTag(tag.key, tag.value) for tag in request_message.tags]
     experiment_id = _get_tracking_store().create_experiment(
         request_message.name, request_message.artifact_location, tags
@@ -624,15 +643,11 @@ def _get_experiment_by_name():
     return response
 
 
-async def _delete_experiment(
-        request: Request,
-        params: make_body_parameter_type(DeleteExperiment),
-):
-    request_message = await _get_request_message(
-        request,
-        DeleteExperiment(),
-        schema={"experiment_id": [_assert_required, _assert_string]},
-    )
+@handler_with_body(
+    message=DeleteExperiment,
+    schema={"experiment_id": [_assert_required, _assert_string]},
+)
+async def _delete_experiment(request_message):
     _get_tracking_store().delete_experiment(request_message.experiment_id)
     response_message = DeleteExperiment.Response()
     response = Response(mimetype="application/json")
@@ -1113,21 +1128,17 @@ def search_datasets_handler():
         return _not_implemented()
 
 
-async def _search_experiments_get(
-        request: Request,
-        params: message2pydantic(SearchExperiments) = Depends(),
-):
-    request_message = await _get_request_message(
-        request,
-        SearchExperiments(),
-        schema={
-            "view_type": [_assert_intlike],
-            "max_results": [_assert_intlike],
-            "order_by": [_assert_array],
-            "filter": [_assert_string],
-            "page_token": [_assert_string],
-        },
-    )
+@handler_with_query(
+    message=SearchExperiments,
+    schema={
+        "view_type": [_assert_intlike],
+        "max_results": [_assert_intlike],
+        "order_by": [_assert_array],
+        "filter": [_assert_string],
+        "page_token": [_assert_string],
+    },
+)
+async def _search_experiments_get(request_message):
     experiment_entities = _get_tracking_store().search_experiments(
         view_type=request_message.view_type,
         max_results=request_message.max_results,
@@ -1142,21 +1153,17 @@ async def _search_experiments_get(
     return Response(message_to_json(response_message), media_type="application/json")
 
 
-async def _search_experiments_post(
-        request: Request,
-        params: make_body_parameter_type(SearchExperiments),
-):
-    request_message = await _get_request_message(
-        request,
-        SearchExperiments(),
-        schema={
-            "view_type": [_assert_intlike],
-            "max_results": [_assert_intlike],
-            "order_by": [_assert_array],
-            "filter": [_assert_string],
-            "page_token": [_assert_string],
-        },
-    )
+@handler_with_body(
+    message=SearchExperiments,
+    schema={
+        "view_type": [_assert_intlike],
+        "max_results": [_assert_intlike],
+        "order_by": [_assert_array],
+        "filter": [_assert_string],
+        "page_token": [_assert_string],
+    },
+)
+async def _search_experiments_post(request_message):
     experiment_entities = _get_tracking_store().search_experiments(
         view_type=request_message.view_type,
         max_results=request_message.max_results,
