@@ -383,37 +383,6 @@ BEFORE_REQUEST_VALIDATORS.update(
 )
 
 
-def fastapi_catch_mlflow_exception(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except MlflowException as e:
-            raise HTTPException(
-                status_code=e.get_http_status_code(),
-                detail=e.serialize_as_json(),
-                headers=e.headers,
-            )
-
-    return wrapper
-
-
-def fastapi_async_catch_mlflow_exception(func):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        try:
-            return await func(*args, **kwargs)
-        except MlflowException as e:
-            raise HTTPException(
-                status_code=e.get_http_status_code(),
-                detail=e.serialize_as_json(),
-                headers=e.headers,
-            )
-
-    return wrapper
-
-
-@fastapi_catch_mlflow_exception
 def validate_credentials(
     request: Request, credentials: HTTPBasicCredentials = Depends(HTTPBasic())
 ):
