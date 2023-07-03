@@ -594,7 +594,6 @@ def handler_with_query(message, schema):
     },
 )
 async def _create_experiment(request_message):
-    """Some description about create experiment endpoint"""
     tags = [ExperimentTag(tag.key, tag.value) for tag in request_message.tags]
     experiment_id = _get_tracking_store().create_experiment(
         request_message.name, request_message.artifact_location, tags
@@ -1136,6 +1135,7 @@ def search_datasets_handler():
     },
 )
 async def _search_experiments_get(request_message):
+    """Some description about search experiment GET endpoint"""
     experiment_entities = _get_tracking_store().search_experiments(
         view_type=request_message.view_type,
         max_results=request_message.max_results,
@@ -1161,6 +1161,7 @@ async def _search_experiments_get(request_message):
     },
 )
 async def _search_experiments_post(request_message):
+    """Some description about search experiment POST endpoint"""
     experiment_entities = _get_tracking_store().search_experiments(
         view_type=request_message.view_type,
         max_results=request_message.max_results,
