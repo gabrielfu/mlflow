@@ -12,13 +12,11 @@ import os
 from pathlib import Path
 from typing import Callable
 
-from fastapi import Depends, APIRouter
+from fastapi import Depends, APIRouter, FastAPI, Request, Response
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
-from flask import request
-from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
-from jinja2 import Template
 from starlette.middleware.base import BaseHTTPMiddleware
+from jinja2 import Template
 
 from mlflow import MlflowException
 from mlflow.entities import Experiment
