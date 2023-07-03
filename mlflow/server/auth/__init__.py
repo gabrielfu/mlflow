@@ -9,11 +9,10 @@ Usage
 
 import logging
 import os
-from functools import wraps
 from pathlib import Path
 from typing import Callable
 
-from fastapi import Depends, HTTPException, APIRouter
+from fastapi import Depends, APIRouter
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from flask import request
 from fastapi import FastAPI, Request, Response

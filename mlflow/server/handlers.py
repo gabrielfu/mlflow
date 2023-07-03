@@ -1,5 +1,4 @@
 # Define all the service endpoint handlers here.
-import inspect
 import json
 import os
 import tempfile
@@ -9,16 +8,14 @@ import pathlib
 import re
 
 import logging
-from functools import wraps, update_wrapper, partial
-from typing import Optional
+from functools import wraps, partial
 
-from fastapi import Response, Depends, Body
+from fastapi import Response, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from google.protobuf import descriptor
 from google.protobuf.json_format import ParseError
-from typing_extensions import Annotated
 
 from mlflow.entities import Metric, Param, RunTag, ViewType, ExperimentTag, FileInfo, DatasetInput
 from mlflow.entities.model_registry import RegisteredModelTag, ModelVersionTag
