@@ -75,7 +75,7 @@ def convert_field(level: int, is_query: bool, field: FieldDescriptor) -> str:
         type_statement = enum_type.name
         class_statement = f"{tab * level}class {enum_type.name}(IntEnum):"
         field_statements = map(
-            lambda v: f"{tab * (level + 1)}{v.name} = {v.index}",
+            lambda v: f"{tab * (level + 1)}{v.name} = {v.index + 1}",
             enum_type.values,
         )
         extra = linesep.join([class_statement, *field_statements])
