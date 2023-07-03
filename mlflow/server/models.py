@@ -10,7 +10,8 @@ from google.protobuf.struct_pb2 import Struct  # noqa
 from google.protobuf.timestamp_pb2 import Timestamp  # noqa
 from google.protobuf.duration_pb2 import Duration  # noqa
 from pydantic import BaseModel, Field  # noqa
-from fastapi import Query  # noqa
+from fastapi import Query, Body  # noqa
+from typing_extensions import Annotated
 
 message_metaclasses = [GeneratedProtocolMessageType]
 try:
@@ -54,7 +55,7 @@ def _is_required(field: FieldDescriptor):
     return False
 
 
-def convert_field(level: int, field: FieldDescriptor) -> str:
+def convert_field(level: int, is_query: bool, field: FieldDescriptor) -> str:
     level += 1
     field_type = field.type
     field_label = field.label
@@ -87,7 +88,7 @@ def convert_field(level: int, field: FieldDescriptor) -> str:
             type_statement = "Dict[str, Any]"
             factory = "dict"
         else:
-            extra = _descriptor2pydantic(level, field.message_type)
+            extra = _descriptor2pydantic(level, field.message_type, is_query=is_query)
             factory = type_statement
     else:
         type_statement = m(field)
@@ -102,7 +103,11 @@ def convert_field(level: int, field: FieldDescriptor) -> str:
     else:
         default_value = "None"
         type_statement = f"Optional[{type_statement}]"
-    default_statement = f" = Field(Query({default_value}))"
+
+    if is_query:
+        default_statement = f" = Field(Query({default_value}))"
+    else:
+        default_statement = ""
 
     field_statement = f"{tab * level}{field.name}: {type_statement}{default_statement}"
     if not extra:
@@ -110,19 +115,28 @@ def convert_field(level: int, field: FieldDescriptor) -> str:
     return linesep + extra + one_line + field_statement
 
 
-def _descriptor2pydantic(level: int, descriptor: Descriptor, model_name: str) -> str:
+def _descriptor2pydantic(
+        level: int,
+        descriptor: Descriptor,
+        model_name: str = None,
+        is_query: bool = True,
+) -> str:
+    model_name = model_name or descriptor.name
     class_statement = f"{tab * level}class {model_name}(BaseModel):"
-    field_statements = map(partial(convert_field, level), descriptor.fields)
+    field_statements = map(partial(convert_field, level, is_query), descriptor.fields)
     return linesep.join([class_statement, *field_statements])
 
 
-def message2pydantic(message: GeneratedProtocolMessageType) -> Type[BaseModel]:
+def message2pydantic(
+        message: GeneratedProtocolMessageType,
+        is_query: bool = True,
+) -> Type[BaseModel]:
     """ convert a protobuf message object to pydantic model object """
     descriptor = message.DESCRIPTOR
     # Unique model name for each call
     rand = str(uuid.uuid4())[:8]
     model_name = f"{descriptor.name}Model{rand}"
-    model_string = _descriptor2pydantic(0, descriptor, model_name)
+    model_string = _descriptor2pydantic(0, descriptor, model_name, is_query)
     getter_key = "getter"
     getter_string = f"def {getter_key}(): return {model_name}"
     compile_string = model_string + linesep + getter_string
@@ -131,3 +145,8 @@ def message2pydantic(message: GeneratedProtocolMessageType) -> Type[BaseModel]:
     sub_namespace = {k: v for k, v in globals().items() if not k.startswith("__")}
     exec(compile_code, sub_namespace)
     return sub_namespace[getter_key]()
+
+
+def make_body_parameter_type(message: GeneratedProtocolMessageType):
+    return Annotated[message2pydantic(message, is_query=False), Body()]
+

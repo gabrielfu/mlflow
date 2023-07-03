@@ -13,12 +13,13 @@ import logging
 from functools import wraps
 from typing import Optional
 
-from fastapi import Response, Depends
+from fastapi import Response, Depends, Body
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from google.protobuf import descriptor
 from google.protobuf.json_format import ParseError
+from typing_extensions import Annotated
 
 from mlflow.entities import Metric, Param, RunTag, ViewType, ExperimentTag, FileInfo, DatasetInput
 from mlflow.entities.model_registry import RegisteredModelTag, ModelVersionTag
@@ -94,7 +95,7 @@ from mlflow.utils.uri import is_local_uri, is_file_uri
 from mlflow.utils.file_utils import local_file_uri_to_path
 from mlflow.tracking.registry import UnsupportedModelRegistryStoreURIException
 from mlflow.environment_variables import MLFLOW_ALLOW_FILE_URI_AS_MODEL_VERSION_SOURCE
-from mlflow.server.models import message2pydantic
+from mlflow.server.models import message2pydantic, make_body_parameter_type
 
 _logger = logging.getLogger(__name__)
 _tracking_store = None
@@ -564,10 +565,12 @@ def _not_implemented():
 # Tracking Server APIs
 
 
-@catch_mlflow_exception
-@_disable_if_artifacts_only
-def _create_experiment():
-    request_message = _get_request_message(
+async def _create_experiment(
+        request: Request,
+        params: make_body_parameter_type(CreateExperiment),
+):
+    request_message = await _get_request_message(
+        request,
         CreateExperiment(),
         schema={
             "name": [_assert_required, _assert_string],
@@ -623,7 +626,7 @@ def _get_experiment_by_name():
 
 async def _delete_experiment(
         request: Request,
-        params: message2pydantic(DeleteExperiment) = Depends(),
+        params: make_body_parameter_type(DeleteExperiment),
 ):
     request_message = await _get_request_message(
         request,
@@ -1141,7 +1144,7 @@ async def _search_experiments_get(
 
 async def _search_experiments_post(
         request: Request,
-        params: message2pydantic(SearchExperiments) = Depends(),
+        params: make_body_parameter_type(SearchExperiments),
 ):
     request_message = await _get_request_message(
         request,
