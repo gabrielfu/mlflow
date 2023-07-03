@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Callable
 
-from fastapi import Depends, APIRouter, FastAPI, Request, Response
+from fastapi import Depends, APIRouter, FastAPI, Request, Response, HTTPException
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -125,10 +125,10 @@ store = SqlAlchemyStore()
 
 router = APIRouter()
 
-unauthorized_exc = MlflowException(
-    "You are not authenticated. Please set the environment variables "
-    f"{MLFLOW_TRACKING_USERNAME.name} and {MLFLOW_TRACKING_PASSWORD.name}.",
-    error_code=UNAUTHENTICATED,
+unauthorized_exc = HTTPException(
+    status_code=401,
+    detail="You are not authenticated. Please set the environment variables "
+           f"{MLFLOW_TRACKING_USERNAME.name} and {MLFLOW_TRACKING_PASSWORD.name}.",
     headers={"WWW-Authenticate": 'Basic realm="mlflow"'},
 )
 
@@ -401,7 +401,8 @@ def validate_credentials(
     if validator := BEFORE_REQUEST_VALIDATORS.get((path, method)):
         _logger.debug(f"Calling validator: {validator.__name__}")
         if not validator():
-            raise MlflowException(
+            raise HTTPException(
+                403,
                 "Permission denied",
                 PERMISSION_DENIED,
             )
