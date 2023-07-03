@@ -1,5 +1,6 @@
 # Define all the service endpoint handlers here.
 import functools
+import inspect
 import json
 import os
 import tempfile
@@ -10,6 +11,7 @@ import re
 
 import logging
 from functools import wraps
+from typing import Optional
 
 from fastapi import Response, Depends
 from fastapi.responses import FileResponse, StreamingResponse
@@ -92,6 +94,7 @@ from mlflow.utils.uri import is_local_uri, is_file_uri
 from mlflow.utils.file_utils import local_file_uri_to_path
 from mlflow.tracking.registry import UnsupportedModelRegistryStoreURIException
 from mlflow.environment_variables import MLFLOW_ALLOW_FILE_URI_AS_MODEL_VERSION_SOURCE
+from mlflow.server.models import message2pydantic
 
 _logger = logging.getLogger(__name__)
 _tracking_store = None
@@ -389,7 +392,7 @@ def _get_request_json(request: Request):
     return request.json()
 
 
-def _get_request_message(request: Request, request_message, schema=None):
+async def _get_request_message(request: Request, request_message, schema=None):
     from querystring_parser import parser
 
     if request.method == "GET" and len(request.query_params) > 0:
@@ -416,7 +419,7 @@ def _get_request_message(request: Request, request_message, schema=None):
         parse_dict(request_dict, request_message)
         return request_message
 
-    request_json = _get_request_json(request)
+    request_json = await request.json()
 
     # Older clients may post their JSON double-encoded as strings, so the get_json
     # above actually converts it to a string. Therefore, we check this condition
@@ -618,11 +621,14 @@ def _get_experiment_by_name():
     return response
 
 
-@catch_mlflow_exception
-@_disable_if_artifacts_only
-def _delete_experiment():
-    request_message = _get_request_message(
-        DeleteExperiment(), schema={"experiment_id": [_assert_required, _assert_string]}
+async def _delete_experiment(
+        request: Request,
+        params: message2pydantic(DeleteExperiment) = Depends(),
+):
+    request_message = await _get_request_message(
+        request,
+        DeleteExperiment(),
+        schema={"experiment_id": [_assert_required, _assert_string]},
     )
     _get_tracking_store().delete_experiment(request_message.experiment_id)
     response_message = DeleteExperiment.Response()
@@ -1104,22 +1110,50 @@ def search_datasets_handler():
         return _not_implemented()
 
 
-@catch_mlflow_exception
-@_disable_if_artifacts_only
-def _search_experiments(
-    request_message=Depends(
-        _request_message_getter(
-            SearchExperiments(),
-            schema={
-                "view_type": [_assert_intlike],
-                "max_results": [_assert_intlike],
-                "order_by": [_assert_array],
-                "filter": [_assert_string],
-                "page_token": [_assert_string],
-            },
-        )
-    )
+async def _search_experiments_get(
+        request: Request,
+        params: message2pydantic(SearchExperiments) = Depends(),
 ):
+    request_message = await _get_request_message(
+        request,
+        SearchExperiments(),
+        schema={
+            "view_type": [_assert_intlike],
+            "max_results": [_assert_intlike],
+            "order_by": [_assert_array],
+            "filter": [_assert_string],
+            "page_token": [_assert_string],
+        },
+    )
+    experiment_entities = _get_tracking_store().search_experiments(
+        view_type=request_message.view_type,
+        max_results=request_message.max_results,
+        order_by=request_message.order_by,
+        filter_string=request_message.filter,
+        page_token=request_message.page_token,
+    )
+    response_message = SearchExperiments.Response()
+    response_message.experiments.extend([e.to_proto() for e in experiment_entities])
+    if experiment_entities.token:
+        response_message.next_page_token = experiment_entities.token
+    return Response(message_to_json(response_message), media_type="application/json")
+
+
+async def _search_experiments_post(
+        request: Request,
+        params: message2pydantic(SearchExperiments) = Depends(),
+):
+    request_message = await _get_request_message(
+        request,
+        SearchExperiments(),
+        schema={
+            "view_type": [_assert_intlike],
+            "max_results": [_assert_intlike],
+            "order_by": [_assert_array],
+            "filter": [_assert_string],
+            "page_token": [_assert_string],
+        },
+    )
     experiment_entities = _get_tracking_store().search_experiments(
         view_type=request_message.view_type,
         max_results=request_message.max_results,
@@ -1832,7 +1866,10 @@ def get_service_endpoints(service, get_handler):
         endpoints = service_method.GetOptions().Extensions[databricks_pb2.rpc].endpoints
         for endpoint in endpoints:
             for http_path in _get_paths(endpoint.path):
-                handler = get_handler(service().GetRequestClass(service_method))
+                handler = get_handler((
+                    service().GetRequestClass(service_method),
+                    endpoint.method,
+                ))
                 ret.append((http_path, handler, [endpoint.method]))
     return ret
 
@@ -1850,10 +1887,10 @@ def get_endpoints(get_handler=get_handler):
 
 HANDLERS = {
     # Tracking Server APIs
-    CreateExperiment: _create_experiment,
+    (CreateExperiment, "POST"): _create_experiment,
     GetExperiment: _get_experiment,
     GetExperimentByName: _get_experiment_by_name,
-    DeleteExperiment: _delete_experiment,
+    (DeleteExperiment, "POST"): _delete_experiment,
     RestoreExperiment: _restore_experiment,
     UpdateExperiment: _update_experiment,
     CreateRun: _create_run,
@@ -1871,7 +1908,8 @@ HANDLERS = {
     SearchRuns: _search_runs,
     ListArtifacts: _list_artifacts,
     GetMetricHistory: _get_metric_history,
-    SearchExperiments: _search_experiments,
+    (SearchExperiments, "GET"): _search_experiments_get,
+    (SearchExperiments, "POST"): _search_experiments_post,
     LogInputs: _log_inputs,
     # Model Registry APIs
     CreateRegisteredModel: _create_registered_model,
