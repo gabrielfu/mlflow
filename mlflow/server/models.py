@@ -1,3 +1,10 @@
+"""
+Modified from
+https://github.com/Ed-XCF/protobuf2pydantic
+
+Reference only
+"""
+
 import uuid
 from os import linesep
 from functools import partial
@@ -140,7 +147,6 @@ def message2pydantic(
     getter_key = "getter"
     getter_string = f"def {getter_key}(): return {model_name}"
     compile_string = model_string + linesep + getter_string
-    print(compile_string)
     compile_code = compile(compile_string, "<string>", "exec")
     sub_namespace = {k: v for k, v in globals().items() if not k.startswith("__")}
     exec(compile_code, sub_namespace)
