@@ -387,7 +387,10 @@ def _validate_param_against_schema(schema, param, value, proto_parsing_succeeded
 
 
 def _get_request_json(request: Request):
-    return request.json()
+    try:
+        return request.json()
+    except json.JSONDecodeError:
+        return None
 
 
 async def _get_request_message(request: Request, request_message, schema=None):
