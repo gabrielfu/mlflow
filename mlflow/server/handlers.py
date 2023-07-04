@@ -1,4 +1,5 @@
 # Define all the service endpoint handlers here.
+import inspect
 import json
 import os
 import tempfile
@@ -465,15 +466,31 @@ def _send_artifact(artifact_repository, path):
 
 def catch_mlflow_exception(func):
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    async def async_wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except MlflowException as e:
+            return JSONResponse(
+                content=e.serialize_as_json(),
+                status_code=e.get_http_status_code(),
+                headers=e.headers,
+            )
+
+    @wraps(func)
+    def sync_wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except MlflowException as e:
-            response = JSONResponse(e.serialize_as_json())
-            response.status_code = e.get_http_status_code()
-            return response
+            return JSONResponse(
+                content=e.serialize_as_json(),
+                status_code=e.get_http_status_code(),
+                headers=e.headers,
+            )
 
-    return wrapper
+    if inspect.iscoroutinefunction(func):
+        return async_wrapper
+    else:
+        return sync_wrapper
 
 
 def _disable_unless_serve_artifacts(func):
@@ -586,6 +603,7 @@ def handler(message, schema, is_query: bool):
         return body_decorator
 
 
+@catch_mlflow_exception
 @handler(
     message=CreateExperiment,
     schema={
@@ -602,9 +620,7 @@ async def _create_experiment(request_message):
     )
     response_message = CreateExperiment.Response()
     response_message.experiment_id = experiment_id
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
-    return response
+    return Response(message_to_json(response_message), media_type="application/json")
 
 
 @catch_mlflow_exception
@@ -641,6 +657,7 @@ def _get_experiment_by_name():
     return response
 
 
+@catch_mlflow_exception
 @handler(
     message=DeleteExperiment,
     schema={"experiment_id": [_assert_required, _assert_string]},
@@ -649,9 +666,7 @@ def _get_experiment_by_name():
 async def _delete_experiment(request_message):
     _get_tracking_store().delete_experiment(request_message.experiment_id)
     response_message = DeleteExperiment.Response()
-    response = Response(mimetype="application/json")
-    response.set_data(message_to_json(response_message))
-    return response
+    return Response(message_to_json(response_message), media_type="application/json")
 
 
 @catch_mlflow_exception
@@ -1127,6 +1142,7 @@ def search_datasets_handler():
         return _not_implemented()
 
 
+@catch_mlflow_exception
 @handler(
     message=SearchExperiments,
     schema={
