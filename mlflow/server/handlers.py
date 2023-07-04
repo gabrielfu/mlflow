@@ -561,20 +561,8 @@ def _not_implemented():
 # Tracking Server APIs
 
 
-def handler_with_body(message, schema):
-    def decorator(func):
-        async def wrapper(request: Request, params: make_body_parameter_type(message) = None):
-            # pylint: disable=unused-argument
-            request_message = await _get_request_message(request, message(), schema)
-            return await func(request_message)
-        wrapper.__name__ = func.__name__
-        wrapper.__doc__ = func.__doc__
-        return wrapper
-    return decorator
-
-
-def handler_with_query(message, schema):
-    def decorator(func):
+def handler(message, schema, is_query: bool):
+    def query_decorator(func):
         async def wrapper(request: Request, params: message2pydantic(message) = Depends()):
             # pylint: disable=unused-argument
             request_message = await _get_request_message(request, message(), schema)
@@ -582,16 +570,30 @@ def handler_with_query(message, schema):
         wrapper.__name__ = func.__name__
         wrapper.__doc__ = func.__doc__
         return wrapper
-    return decorator
+
+    def body_decorator(func):
+        async def wrapper(request: Request, params: make_body_parameter_type(message) = None):
+            # pylint: disable=unused-argument
+            request_message = await _get_request_message(request, message(), schema)
+            return await func(request_message)
+        wrapper.__name__ = func.__name__
+        wrapper.__doc__ = func.__doc__
+        return wrapper
+
+    if is_query:
+        return query_decorator
+    else:
+        return body_decorator
 
 
-@handler_with_body(
+@handler(
     message=CreateExperiment,
     schema={
         "name": [_assert_required, _assert_string],
         "artifact_location": [_assert_string],
         "tags": [_assert_array],
     },
+    is_query=False,
 )
 async def _create_experiment(request_message):
     tags = [ExperimentTag(tag.key, tag.value) for tag in request_message.tags]
@@ -639,9 +641,10 @@ def _get_experiment_by_name():
     return response
 
 
-@handler_with_body(
+@handler(
     message=DeleteExperiment,
     schema={"experiment_id": [_assert_required, _assert_string]},
+    is_query=False,
 )
 async def _delete_experiment(request_message):
     _get_tracking_store().delete_experiment(request_message.experiment_id)
@@ -1124,7 +1127,7 @@ def search_datasets_handler():
         return _not_implemented()
 
 
-@handler_with_query(
+@handler(
     message=SearchExperiments,
     schema={
         "view_type": [_assert_intlike],
@@ -1133,6 +1136,7 @@ def search_datasets_handler():
         "filter": [_assert_string],
         "page_token": [_assert_string],
     },
+    is_query=True,
 )
 async def _search_experiments_get(request_message):
     """Some description about search experiment GET endpoint"""
@@ -1150,7 +1154,7 @@ async def _search_experiments_get(request_message):
     return Response(message_to_json(response_message), media_type="application/json")
 
 
-@handler_with_body(
+@handler(
     message=SearchExperiments,
     schema={
         "view_type": [_assert_intlike],
@@ -1159,6 +1163,7 @@ async def _search_experiments_get(request_message):
         "filter": [_assert_string],
         "page_token": [_assert_string],
     },
+    is_query=False
 )
 async def _search_experiments_post(request_message):
     """Some description about search experiment POST endpoint"""
