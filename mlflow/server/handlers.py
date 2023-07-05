@@ -9,7 +9,7 @@ import pathlib
 import re
 
 import logging
-from functools import wraps, partial
+from functools import wraps
 
 from fastapi import Response, Depends
 from fastapi.responses import FileResponse, StreamingResponse
@@ -453,10 +453,6 @@ async def _get_request_message(request: Request, request_message, schema=None):
             )
 
     return request_message
-
-
-def _request_message_getter(request_message, schema):
-    return partial(_get_request_message, request_message=request_message, schema=schema)
 
 
 def _send_artifact(artifact_repository, path):
