@@ -354,3 +354,7 @@ _MLFLOW_AUTOLOGGING_TESTING = _BooleanEnvironmentVariable("MLFLOW_AUTOLOGGING_TE
 #: Specifies the uri of a Mlflow Gateway Server instance to be used with the Gateway Client APIs
 #: (default: ``None``)
 MLFLOW_GATEWAY_URI = _EnvironmentVariable("MLFLOW_GATEWAY_URI", str, None)
+
+#: Specifies the path to a conda installation. MLflow will default to running "conda" if unset.
+#: (default: ``None``)
+MLFLOW_CONDA_HOME = _EnvironmentVariable("MLFLOW_CONDA_HOME", str, None)

@@ -5,13 +5,11 @@ import os
 
 import yaml
 
+from mlflow.environment_variables import MLFLOW_CONDA_HOME
 from mlflow.exceptions import ExecutionException
 from mlflow.utils import process
 from mlflow.utils.environment import Environment
 
-# Environment variable indicating a path to a conda installation. MLflow will default to running
-# "conda" if unset
-MLFLOW_CONDA_HOME = "MLFLOW_CONDA_HOME"
 # Environment variable indicated the name of the command that should be used to create environments.
 # If it is unset, it will default to "conda". This command must be in the $PATH when the user runs,
 # or within MLFLOW_CONDA_HOME if that is set. For example, let's say we want to use mamba
@@ -26,7 +24,7 @@ _logger = logging.getLogger(__name__)
 
 def get_conda_command(conda_env_name):
     #  Checking for newer conda versions
-    if os.name != "nt" and ("CONDA_EXE" in os.environ or "MLFLOW_CONDA_HOME" in os.environ):
+    if os.name != "nt" and ("CONDA_EXE" in os.environ or MLFLOW_CONDA_HOME.is_defined):
         conda_path = get_conda_bin_executable("conda")
         activate_conda_env = [f"source {os.path.dirname(conda_path)}/../etc/profile.d/conda.sh"]
         activate_conda_env += [f"conda activate {conda_env_name} 1>&2"]
@@ -51,7 +49,7 @@ def get_conda_bin_executable(executable_name):
     ``mlflow.projects.MLFLOW_CONDA_HOME`` is unspecified, this method simply returns the passed-in
     executable name.
     """
-    conda_home = os.environ.get(MLFLOW_CONDA_HOME)
+    conda_home = MLFLOW_CONDA_HOME.get()
     if conda_home:
         return os.path.join(conda_home, f"bin/{executable_name}")
     # Use CONDA_EXE as per https://github.com/conda/conda/issues/7126
