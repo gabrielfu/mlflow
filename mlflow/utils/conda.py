@@ -5,19 +5,10 @@ import os
 
 import yaml
 
-from mlflow.environment_variables import MLFLOW_CONDA_HOME
+from mlflow.environment_variables import MLFLOW_CONDA_HOME, MLFLOW_CONDA_CREATE_ENV_CMD
 from mlflow.exceptions import ExecutionException
 from mlflow.utils import process
 from mlflow.utils.environment import Environment
-
-# Environment variable indicated the name of the command that should be used to create environments.
-# If it is unset, it will default to "conda". This command must be in the $PATH when the user runs,
-# or within MLFLOW_CONDA_HOME if that is set. For example, let's say we want to use mamba
-# (https://github.com/mamba-org/mamba) instead of conda to create environments. Then:
-# > conda install mamba -n base -c conda-forge
-# > MLFLOW_CONDA_CREATE_ENV_CMD="mamba"
-# > mlflow run ...
-MLFLOW_CONDA_CREATE_ENV_CMD = "MLFLOW_CONDA_CREATE_ENV_CMD"
 
 _logger = logging.getLogger(__name__)
 
@@ -85,7 +76,7 @@ def _get_conda_executable_for_create_env():
     by default, but it can be set to something else by setting the environment variable
 
     """
-    conda_env_create_cmd = os.environ.get(MLFLOW_CONDA_CREATE_ENV_CMD)
+    conda_env_create_cmd = MLFLOW_CONDA_CREATE_ENV_CMD.get()
     if conda_env_create_cmd is not None:
         conda_env_create_path = get_conda_bin_executable(conda_env_create_cmd)
     else:
@@ -243,7 +234,7 @@ def get_or_create_conda_env(conda_env_path, env_id=None, capture_output=False, e
             "https://conda.io/projects/conda/en/latest/"
             "user-guide/install/index.html. "
             "You can also configure MLflow to look for a specific "
-            f"Conda executable by setting the {MLFLOW_CONDA_HOME} environment variable "
+            f"Conda executable by setting the {MLFLOW_CONDA_HOME.name} environment variable "
             "to the path of the Conda executable"
         )
 
@@ -252,11 +243,11 @@ def get_or_create_conda_env(conda_env_path, env_id=None, capture_output=False, e
         process._exec_cmd([conda_env_create_path, "--help"], throw_on_error=False)
     except OSError:
         raise ExecutionException(
-            f"You have set the env variable {MLFLOW_CONDA_CREATE_ENV_CMD}, but "
+            f"You have set the env variable {MLFLOW_CONDA_CREATE_ENV_CMD.name}, but "
             f"{conda_env_create_path} does not exist or it is not working properly. "
             f"Note that {conda_env_create_path} and the conda executable need to be "
             "in the same conda environment. You can change the search path by"
-            f"modifying the env variable {MLFLOW_CONDA_HOME}"
+            f"modifying the env variable {MLFLOW_CONDA_HOME.name}"
         )
 
     conda_extra_env_vars = _get_conda_extra_env_vars(env_root_dir)

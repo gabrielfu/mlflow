@@ -358,3 +358,12 @@ MLFLOW_GATEWAY_URI = _EnvironmentVariable("MLFLOW_GATEWAY_URI", str, None)
 #: Specifies the path to a conda installation. MLflow will default to running "conda" if unset.
 #: (default: ``None``)
 MLFLOW_CONDA_HOME = _EnvironmentVariable("MLFLOW_CONDA_HOME", str, None)
+
+#: Specifies the name of the command that should be used to create environments.
+#: If it is unset, it will default to "conda". This command must be in the $PATH when the user runs,
+#: or within MLFLOW_CONDA_HOME if that is set. For example, let's say we want to use mamba
+#: (https://github.com/mamba-org/mamba) instead of conda to create environments. Then:
+#: > conda install mamba -n base -c conda-forge
+#: > MLFLOW_CONDA_CREATE_ENV_CMD="mamba"
+#: > mlflow run ...
+MLFLOW_CONDA_CREATE_ENV_CMD = _EnvironmentVariable("MLFLOW_CONDA_CREATE_ENV_CMD", str, None)
