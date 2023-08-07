@@ -36,8 +36,8 @@ def get_conda_bin_executable(executable_name):
     subdirectory of a conda installation.
 
     The conda home directory (expected to contain a 'bin' subdirectory) is configurable via the
-    ``mlflow.projects.MLFLOW_CONDA_HOME`` environment variable. If
-    ``mlflow.projects.MLFLOW_CONDA_HOME`` is unspecified, this method simply returns the passed-in
+    ``mlflow.environment_variables.MLFLOW_CONDA_HOME`` environment variable. If
+    ``mlflow.environment_variables.MLFLOW_CONDA_HOME`` is unspecified, this method simply returns the passed-in
     executable name.
     """
     conda_home = MLFLOW_CONDA_HOME.get()
