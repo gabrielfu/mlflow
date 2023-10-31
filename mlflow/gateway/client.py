@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 import requests.exceptions
 
@@ -259,7 +259,9 @@ class MlflowGatewayClient:
         self._call_endpoint("DELETE", route)
 
     @experimental
-    def query(self, route: str, data: Dict[str, Any], stream: bool = False):
+    def query(
+        self, route: str, data: Dict[str, Any], stream: bool = False
+    ) -> Union[Dict[str, Any], Iterator[Dict[str, Any]]]:
         """
         Submit a query to a configured provider route.
 
@@ -267,8 +269,9 @@ class MlflowGatewayClient:
         :param data: The data to send in the query. A dictionary representing the per-route
             specific structure required for a given provider.
         :param stream: Enable streaming of the response. If enabled, this function will return
-                       a generator that will yield the response in chunks as they are received from the
-                       server. If disabled, the function will return the full response as a dictionary.
+                       a generator that will yield the response in chunks as they are received from
+                       the server. If disabled, the function will return the full response as a
+                       dictionary.
                        Ignored for routes that do not support streaming (e.g. embeddings).
         :return: The route's response as a dictionary, standardized to the route type.
 
@@ -338,7 +341,7 @@ class MlflowGatewayClient:
         query_route = assemble_uri_path([MLFLOW_GATEWAY_ROUTE_BASE, route, MLFLOW_QUERY_SUFFIX])
 
         try:
-            return self._call_endpoint("POST", query_route, data).json()
+            resp = self._call_endpoint("POST", query_route, data)
         except MlflowException as e:
             if isinstance(e.__cause__, requests.exceptions.Timeout):
                 timeout_message = (
@@ -352,6 +355,20 @@ class MlflowGatewayClient:
                 raise MlflowException(message=timeout_message, error_code=BAD_REQUEST)
             else:
                 raise e
+
+        def strip_sse_prefix(s: str):
+            import re
+
+            return re.sub(r"^data:\s+", "", s)
+
+        if stream:
+            return (
+                json.loads(strip_sse_prefix(chunk))
+                for chunk in resp.iter_content(chunk_size=None)
+                if chunk
+            )
+        else:
+            return resp.json()
 
     @experimental
     def set_limits(self, route: str, limits: List[Dict[str, Any]]) -> LimitsConfig:
