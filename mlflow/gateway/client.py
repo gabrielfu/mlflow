@@ -259,13 +259,17 @@ class MlflowGatewayClient:
         self._call_endpoint("DELETE", route)
 
     @experimental
-    def query(self, route: str, data: Dict[str, Any]):
+    def query(self, route: str, data: Dict[str, Any], stream: bool = False):
         """
         Submit a query to a configured provider route.
 
         :param route: The name of the route to submit the query to.
         :param data: The data to send in the query. A dictionary representing the per-route
             specific structure required for a given provider.
+        :param stream: Enable streaming of the response. If enabled, this function will return
+                       a generator that will yield the response in chunks as they are received from the
+                       server. If disabled, the function will return the full response as a dictionary.
+                       Ignored for routes that do not support streaming (e.g. embeddings).
         :return: The route's response as a dictionary, standardized to the route type.
 
         For chat, the structure should be:
@@ -327,6 +331,8 @@ class MlflowGatewayClient:
 
         """
 
+        if stream:
+            data.update({"stream": stream})
         data = json.dumps(data)
 
         query_route = assemble_uri_path([MLFLOW_GATEWAY_ROUTE_BASE, route, MLFLOW_QUERY_SUFFIX])
