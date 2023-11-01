@@ -184,4 +184,5 @@ def is_valid_ai21labs_model(model_name: str) -> bool:
 
 
 def strip_sse_prefix(s: str):
+    # https://html.spec.whatwg.org/multipage/server-sent-events.html
     return re.sub(r"^data:\s+", "", s)
