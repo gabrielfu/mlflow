@@ -6,7 +6,7 @@ from mlflow.exceptions import MlflowException
 from mlflow.gateway.config import OpenAIAPIType, OpenAIConfig, RouteConfig
 from mlflow.gateway.providers.base import BaseProvider
 from mlflow.gateway.providers.utils import rename_payload_keys, send_request, send_request_stream
-from mlflow.gateway.schemas import chat, completions, embeddings
+from mlflow.gateway import schemas
 from mlflow.utils.uri import append_to_uri_path, append_to_uri_query_params
 
 
@@ -77,7 +77,7 @@ class OpenAIProvider(BaseProvider):
         else:
             return payload
 
-    async def chat(self, payload: chat.RequestPayload) -> chat.ResponsePayload:
+    async def chat(self, payload: schemas.chat.RequestPayload) -> schemas.chat.ResponsePayload:
         from fastapi import HTTPException
         from fastapi.encoders import jsonable_encoder
 
@@ -125,7 +125,7 @@ class OpenAIProvider(BaseProvider):
         #    ]
         # }
         # ```
-        return chat.ResponsePayload(
+        return schemas.chat.ResponsePayload(
             **{
                 "candidates": [
                     {
@@ -150,8 +150,8 @@ class OpenAIProvider(BaseProvider):
         )
 
     async def chat_stream(
-        self, payload: chat.RequestPayload
-    ) -> AsyncIterable[chat.ResponsePayload]:
+        self, payload: schemas.chat.RequestPayload
+    ) -> AsyncIterable[schemas.chat.StreamResponsePayload]:
         from fastapi import HTTPException
         from fastapi.encoders import jsonable_encoder
 
@@ -205,7 +205,7 @@ class OpenAIProvider(BaseProvider):
             # }
             # ------
             await asyncio.sleep(0.05)
-            yield chat.ResponsePayload(
+            yield schemas.chat.StreamResponsePayload(
                 **{
                     "candidates": [
                         {
@@ -237,7 +237,7 @@ class OpenAIProvider(BaseProvider):
         return payload
 
     def _prepare_completion_response_payload(self, resp):
-        return completions.ResponsePayload(
+        return schemas.completions.ResponsePayload(
             **{
                 "candidates": [
                     {
@@ -256,7 +256,9 @@ class OpenAIProvider(BaseProvider):
             }
         )
 
-    async def completions(self, payload: completions.RequestPayload) -> completions.ResponsePayload:
+    async def completions(
+        self, payload: schemas.completions.RequestPayload
+    ) -> schemas.completions.ResponsePayload:
         from fastapi import HTTPException
         from fastapi.encoders import jsonable_encoder
 
@@ -298,7 +300,9 @@ class OpenAIProvider(BaseProvider):
         # ```
         return self._prepare_completion_response_payload(resp)
 
-    async def embeddings(self, payload: embeddings.RequestPayload) -> embeddings.ResponsePayload:
+    async def embeddings(
+        self, payload: schemas.embeddings.RequestPayload
+    ) -> schemas.embeddings.ResponsePayload:
         from fastapi.encoders import jsonable_encoder
 
         payload = rename_payload_keys(
@@ -335,7 +339,7 @@ class OpenAIProvider(BaseProvider):
         #   }
         # }
         # ```
-        return embeddings.ResponsePayload(
+        return schemas.embeddings.ResponsePayload(
             **{
                 "embeddings": [d["embedding"] for d in resp["data"]],
                 "metadata": {
