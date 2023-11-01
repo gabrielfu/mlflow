@@ -50,12 +50,22 @@ class ResponseMessage(ResponseModel):
     content: str
 
 
+class StreamResponseMessage(ResponseModel):
+    role: Optional[str] = Field(None)
+    content: Optional[str] = Field(None)
+
+
 class CandidateMetadata(ResponseModel, extra="allow"):
     finish_reason: Optional[FinishReason] = None
 
 
 class Candidate(ResponseModel):
     message: ResponseMessage
+    metadata: CandidateMetadata
+
+
+class StreamCandidate(ResponseModel):
+    message: StreamResponseMessage
     metadata: CandidateMetadata
 
 
@@ -94,3 +104,8 @@ class ResponsePayload(ResponseModel):
                 },
             }
         }
+
+
+class StreamResponsePayload(ResponseModel):
+    candidates: List[StreamCandidate]
+    metadata: Metadata
