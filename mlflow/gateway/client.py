@@ -14,7 +14,7 @@ from mlflow.gateway.constants import (
     MLFLOW_GATEWAY_ROUTE_BASE,
     MLFLOW_QUERY_SUFFIX,
 )
-from mlflow.gateway.utils import assemble_uri_path, get_gateway_uri, resolve_route_url
+from mlflow.gateway.utils import assemble_uri_path, get_gateway_uri, resolve_route_url, strip_sse_prefix
 from mlflow.protos.databricks_pb2 import BAD_REQUEST
 from mlflow.store.entities.paged_list import PagedList
 from mlflow.tracking._tracking_service.utils import _get_default_host_creds
@@ -356,15 +356,10 @@ class MlflowGatewayClient:
             else:
                 raise e
 
-        def strip_sse_prefix(s: str):
-            import re
-
-            return re.sub(r"^data:\s+", "", s)
-
         if stream:
             return (
-                json.loads(strip_sse_prefix(chunk))
-                for chunk in resp.iter_content(chunk_size=None)
+                json.loads(strip_sse_prefix(chunk.decode("utf-8")))
+                for chunk in resp.iter_lines()
                 if chunk
             )
         else:
