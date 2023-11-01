@@ -60,7 +60,7 @@ def _create_chat_endpoint(config: RouteConfig):
 
     async def _chat(
         payload: chat.RequestPayload,
-    ):
+    ) -> Union[chat.ResponsePayload, chat.StreamResponsePayload]:
         if payload.stream:
 
             async def generator():
