@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, AsyncIterable, Dict
 
 import aiohttp
 
@@ -42,6 +42,17 @@ async def send_request(headers: Dict[str, str], base_url: str, path: str, payloa
                 detail = js.get("error", {}).get("message", e.message) if "error" in js else js
                 raise HTTPException(status_code=e.status, detail=detail)
             return js
+
+
+async def send_request_stream(
+    headers: Dict[str, str], base_url: str, path: str, payload: Dict[str, Any]
+) -> AsyncIterable[bytes]:
+    async with aiohttp.ClientSession(headers=headers) as session:
+        url = append_to_uri_path(base_url, path)
+        timeout = aiohttp.ClientTimeout(total=MLFLOW_GATEWAY_ROUTE_TIMEOUT_SECONDS)
+        async with session.post(url, json=payload, timeout=timeout) as resp:
+            async for line in resp.content:
+                yield line
 
 
 def rename_payload_keys(payload: Dict[str, Any], mapping: Dict[str, str]) -> Dict[str, Any]:
