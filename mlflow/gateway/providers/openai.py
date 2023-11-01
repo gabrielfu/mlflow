@@ -3,10 +3,10 @@ import json
 from typing import AsyncIterable
 
 from mlflow.exceptions import MlflowException
+from mlflow.gateway import schemas
 from mlflow.gateway.config import OpenAIAPIType, OpenAIConfig, RouteConfig
 from mlflow.gateway.providers.base import BaseProvider
 from mlflow.gateway.providers.utils import rename_payload_keys, send_request, send_request_stream
-from mlflow.gateway import schemas
 from mlflow.utils.uri import append_to_uri_path, append_to_uri_query_params
 
 
