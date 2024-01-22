@@ -46,6 +46,7 @@ class Provider(str, Enum):
     # Note: The following providers are only supported on Databricks
     DATABRICKS_MODEL_SERVING = "databricks-model-serving"
     DATABRICKS = "databricks"
+    CUSTOM = "custom"
 
     @classmethod
     def values(cls):
@@ -215,6 +216,17 @@ class AWSBedrockConfig(ConfigModel):
     aws_config: Union[AWSRole, AWSIdAndKey, AWSBaseConfig]
 
 
+class CustomConfig(ConfigModel):
+    custom_url: str
+    custom_api_key: Optional[str] = str
+
+    # pylint: disable=no-self-argument
+    @validator("custom_api_key", pre=True)
+    def validate_custom_api_key(cls, value):
+        if value is not None:
+            return _resolve_api_key_from_input(value)
+
+
 config_types = {
     Provider.COHERE: CohereConfig,
     Provider.OPENAI: OpenAIConfig,
@@ -225,6 +237,7 @@ config_types = {
     Provider.MLFLOW_MODEL_SERVING: MlflowModelServingConfig,
     Provider.PALM: PaLMConfig,
     Provider.HUGGINGFACE_TEXT_GENERATION_INFERENCE: HuggingFaceTextGenerationInferenceConfig,
+    Provider.CUSTOM: CustomConfig,
 }
 
 
@@ -284,6 +297,7 @@ class Model(ConfigModel):
             MlflowModelServingConfig,
             HuggingFaceTextGenerationInferenceConfig,
             PaLMConfig,
+            CustomConfig,
         ]
     ] = None
 
