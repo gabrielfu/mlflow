@@ -15,15 +15,15 @@ class CustomProvider(BaseProvider):
         super().__init__(config)
         if config.model.config is None or not isinstance(config.model.config, CustomConfig):
             raise TypeError(f"Unexpected config type {config.model.config}")
-        self.endpoint_config: CustomConfig = config.model.config
+        self.custom_config: CustomConfig = config.model.config
 
     async def _request(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         headers = {}
-        if self.endpoint_config.custom_api_key is not None:
-            headers["Authorization"] = f"Bearer {self.endpoint_config.custom_api_key}"
+        if self.custom_config.custom_api_key is not None:
+            headers["Authorization"] = f"Bearer {self.custom_config.custom_api_key}"
         return await send_request(
             headers=headers,
-            base_url=self.endpoint_config.custom_api_key,
+            base_url=self.custom_config.custom_api_key,
             path=path,
             payload=payload,
         )
@@ -51,15 +51,3 @@ class CustomProvider(BaseProvider):
                 total_tokens=resp["usage"]["total_tokens"],
             ),
         )
-
-    # async def embeddings(self, payload: embeddings.RequestPayload) -> embeddings.ResponsePayload:
-    #     payload = jsonable_encoder(payload, exclude_none=True)
-    #     self.check_for_model_field(payload)
-    #     resp = await self._request(
-    #         "embed",
-    #         {
-    #             "model": self.config.model.name,
-    #             **CohereAdapter.embeddings_to_model(payload, self.config),
-    #         },
-    #     )
-    #     return CohereAdapter.model_to_embeddings(resp, self.config)

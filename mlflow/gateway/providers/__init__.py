@@ -15,7 +15,7 @@ def get_provider(provider: Provider) -> Type[BaseProvider]:
     from mlflow.gateway.providers.mosaicml import MosaicMLProvider
     from mlflow.gateway.providers.openai import OpenAIProvider
     from mlflow.gateway.providers.palm import PaLMProvider
-    from mlflow.gateway.providers.endpoint import CustomProvider
+    from mlflow.gateway.providers.custom import CustomProvider
 
     provider_to_class = {
         Provider.OPENAI: OpenAIProvider,
