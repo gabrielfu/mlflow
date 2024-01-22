@@ -23,7 +23,7 @@ class CustomProvider(BaseProvider):
             headers["Authorization"] = f"Bearer {self.custom_config.custom_api_key}"
         return await send_request(
             headers=headers,
-            base_url=self.custom_config.custom_api_key,
+            base_url=self.custom_config.custom_url,
             path=path,
             payload=payload,
         )

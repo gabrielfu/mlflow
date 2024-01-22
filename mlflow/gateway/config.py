@@ -218,7 +218,7 @@ class AWSBedrockConfig(ConfigModel):
 
 class CustomConfig(ConfigModel):
     custom_url: str
-    custom_api_key: Optional[str] = str
+    custom_api_key: Optional[str] = None
 
     # pylint: disable=no-self-argument
     @validator("custom_api_key", pre=True)
