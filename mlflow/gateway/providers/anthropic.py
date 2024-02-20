@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from typing import AsyncIterable
 
@@ -155,53 +156,21 @@ class AnthropicAdapter(ProviderAdapter):
 
     @classmethod
     def completions_to_model(cls, payload, config):
-        key_mapping = {"max_tokens": "max_tokens_to_sample", "stop": "stop_sequences"}
+        prompt = payload.pop("prompt")
 
-        if "top_p" in payload:
-            raise HTTPException(
-                status_code=422,
-                detail="Cannot set both 'temperature' and 'top_p' parameters. "
-                "Please use only the temperature parameter for your query.",
-            )
-        max_tokens = payload.get("max_tokens", MLFLOW_AI_GATEWAY_ANTHROPIC_DEFAULT_MAX_TOKENS)
+        if prompt.startswith("Human: "):
+            prompt = "\n\n" + prompt
 
-        if max_tokens > MLFLOW_AI_GATEWAY_ANTHROPIC_MAXIMUM_MAX_TOKENS:
-            raise HTTPException(
-                status_code=422,
-                detail="Invalid value for max_tokens: cannot exceed "
-                f"{MLFLOW_AI_GATEWAY_ANTHROPIC_MAXIMUM_MAX_TOKENS}.",
-            )
+        if not prompt.startswith("\n\nHuman: "):
+            prompt = "\n\nHuman: " + prompt
 
-        payload["max_tokens"] = max_tokens
+        if not prompt.endswith("\n\nAssistant:"):
+            prompt = prompt + "\n\nAssistant:"
 
-        if payload.get("stream", False):
-            raise HTTPException(
-                status_code=422,
-                detail="Setting the 'stream' parameter to 'true' is not supported with the MLflow "
-                "Gateway.",
-            )
-        n = payload.pop("n", 1)
-        if n != 1:
-            raise HTTPException(
-                status_code=422,
-                detail="'n' must be '1' for the Anthropic provider. Received value: '{n}'.",
-            )
-
-        payload = rename_payload_keys(payload, key_mapping)
-
-        if payload["prompt"].startswith("Human: "):
-            payload["prompt"] = "\n\n" + payload["prompt"]
-
-        if not payload["prompt"].startswith("\n\nHuman: "):
-            payload["prompt"] = "\n\nHuman: " + payload["prompt"]
-
-        if not payload["prompt"].endswith("\n\nAssistant:"):
-            payload["prompt"] = payload["prompt"] + "\n\nAssistant:"
-
-        # The range of Anthropic's temperature is 0-1, but ours is 0-2, so we halve it
-        if "temperature" in payload:
-            payload["temperature"] = 0.5 * payload["temperature"]
-
+        messages = re.findall(r"\n\n(Human|Assistant):(.+?)(?=\n\n(Human|Assistant):|$)", prompt)
+        payload["messages"] = [
+            {"role": role.lower(), "content": content} for role, content, _, _ in messages
+        ]
         return payload
 
     @classmethod
@@ -305,7 +274,7 @@ class AnthropicProvider(BaseProvider, AnthropicAdapter):
         resp = await send_request(
             headers=self.headers,
             base_url=self.base_url,
-            path="complete",
+            path="messages",
             payload={
                 "model": self.config.model.name,
                 **AnthropicAdapter.completions_to_model(payload, self.config),
