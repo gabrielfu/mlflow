@@ -31,6 +31,7 @@ When the logged model is served on Databricks, each secret will be resolved and 
 corresponding environment variable. See https://docs.databricks.com/security/secrets/index.html
 for how to set up secrets on Databricks.
 """
+
 import itertools
 import logging
 import os
@@ -115,12 +116,8 @@ def get_default_conda_env():
     return _mlflow_conda_env(additional_pip_deps=get_default_pip_requirements())
 
 
-def _is_openai_v1():
-    return Version(_get_openai_package_version()).major >= 1
-
-
 def _get_obj_to_task_mapping():
-    if not _is_openai_v1():
+    if Version(_get_openai_package_version()).major < 1:
         from openai import api_resources as ar
 
         return {
@@ -160,9 +157,7 @@ def _get_model_name(model):
     if isinstance(model, str):
         return model
 
-    if Version(_get_openai_package_version()).major < 1 and isinstance(
-        model, openai.Model
-    ):
+    if Version(_get_openai_package_version()).major < 1 and isinstance(model, openai.Model):
         return model.id
 
     raise mlflow.MlflowException(
@@ -357,8 +352,7 @@ def save_model(
     elif task == "chat.completions":
         messages = kwargs.get("messages", [])
         if messages and not (
-            all(isinstance(m, dict) for m in messages)
-            and all(map(_is_valid_message, messages))
+            all(isinstance(m, dict) for m in messages) and all(map(_is_valid_message, messages))
         ):
             raise mlflow.MlflowException.invalid_parameter_value(
                 "If `messages` is provided, it must be a list of dictionaries with keys "
@@ -729,9 +723,7 @@ class _OpenAIWrapper:
 
         _validate_model_params(self.task, self.model, params)
         messages_list = self.format_completions(self.get_params_list(data))
-        requests = [
-            {**self.model, **params, "messages": messages} for messages in messages_list
-        ]
+        requests = [{**self.model, **params, "messages": messages} for messages in messages_list]
         request_url = self._construct_request_url("chat/completions", REQUEST_URL_CHAT)
 
         results = process_api_requests(
@@ -759,9 +751,7 @@ class _OpenAIWrapper:
             }
             for i in range(0, len(prompts_list), batch_size)
         ]
-        request_url = self._construct_request_url(
-            "completions", REQUEST_URL_COMPLETIONS
-        )
+        request_url = self._construct_request_url("completions", REQUEST_URL_COMPLETIONS)
 
         results = process_api_requests(
             requests,
@@ -854,12 +844,8 @@ def load_model(model_uri, dst_path=None):
     Returns:
         A dictionary representing the OpenAI model.
     """
-    local_model_path = _download_artifact_from_uri(
-        artifact_uri=model_uri, output_path=dst_path
-    )
+    local_model_path = _download_artifact_from_uri(artifact_uri=model_uri, output_path=dst_path)
     flavor_conf = _get_flavor_configuration(local_model_path, FLAVOR_NAME)
     _add_code_from_conf_to_system_path(local_model_path, flavor_conf)
-    model_data_path = os.path.join(
-        local_model_path, flavor_conf.get("data", MODEL_FILENAME)
-    )
+    model_data_path = os.path.join(local_model_path, flavor_conf.get("data", MODEL_FILENAME))
     return _load_model(model_data_path)

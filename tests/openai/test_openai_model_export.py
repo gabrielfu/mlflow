@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 import time
+from distutils.version import Version
 from unittest import mock
 
 import numpy as np
@@ -17,7 +18,6 @@ import mlflow
 import mlflow.pyfunc.scoring_server as pyfunc_scoring_server
 from mlflow.exceptions import MlflowException
 from mlflow.models.signature import ModelSignature
-from mlflow.openai import _is_openai_v1
 from mlflow.types.schema import ColSpec, ParamSchema, ParamSpec, Schema, TensorSpec
 
 from tests.helper_functions import get_safe_port, pyfunc_serve_and_score_model
@@ -29,7 +29,7 @@ def spark():
         yield s
 
 
-is_v1 = _is_openai_v1()
+is_v1 = Version(mlflow.openai._get_openai_package_version()).major >= 1
 
 
 def chat_completions():
@@ -109,9 +109,7 @@ def test_log_model():
     assert loaded_model["model"] == "gpt-3.5-turbo"
     assert loaded_model["task"] == "chat.completions"
     assert loaded_model["temperature"] == 0.9
-    assert loaded_model["messages"] == [
-        {"role": "system", "content": "You are an MLflow expert."}
-    ]
+    assert loaded_model["messages"] == [{"role": "system", "content": "You are an MLflow expert."}]
 
 
 @pytest.mark.skipif(not is_v1, reason="Requires OpenAI SDK v1")
@@ -493,9 +491,7 @@ def test_invalid_messages(tmp_path, messages):
 
 
 def test_task_argument_accepts_class(tmp_path):
-    mlflow.openai.save_model(
-        model="gpt-3.5-turbo", task=chat_completions(), path=tmp_path
-    )
+    mlflow.openai.save_model(model="gpt-3.5-turbo", task=chat_completions(), path=tmp_path)
     loaded_model = mlflow.openai.load_model(tmp_path)
     assert loaded_model["task"] == "chat.completions"
 
@@ -511,15 +507,11 @@ def test_model_argument_accepts_retrieved_model(tmp_path):
 def test_save_model_with_secret_scope(tmp_path, monkeypatch):
     scope = "test"
     monkeypatch.setenv("MLFLOW_OPENAI_SECRET_SCOPE", scope)
-    with mock.patch(
-        "mlflow.openai.is_in_databricks_runtime", return_value=True
-    ), mock.patch("mlflow.openai.check_databricks_secret_scope_access"):
-        with pytest.warns(
-            FutureWarning, match="MLFLOW_OPENAI_SECRET_SCOPE.+deprecated"
-        ):
-            mlflow.openai.save_model(
-                model="gpt-3.5-turbo", task="chat.completions", path=tmp_path
-            )
+    with mock.patch("mlflow.openai.is_in_databricks_runtime", return_value=True), mock.patch(
+        "mlflow.openai.check_databricks_secret_scope_access"
+    ):
+        with pytest.warns(FutureWarning, match="MLFLOW_OPENAI_SECRET_SCOPE.+deprecated"):
+            mlflow.openai.save_model(model="gpt-3.5-turbo", task="chat.completions", path=tmp_path)
     with tmp_path.joinpath("openai.yaml").open() as f:
         creds = yaml.safe_load(f)
         assert creds == {
@@ -648,21 +640,13 @@ def test_inference_params(tmp_path):
         signature=ModelSignature(
             inputs=Schema([ColSpec(type="string", name=None)]),
             outputs=Schema([TensorSpec(type=np.dtype("float64"), shape=(-1,))]),
-            params=ParamSchema(
-                [ParamSpec(name="batch_size", dtype="long", default=16)]
-            ),
+            params=ParamSchema([ParamSpec(name="batch_size", dtype="long", default=16)]),
         ),
     )
 
     model_info = mlflow.models.Model.load(tmp_path)
     assert (
-        len(
-            [
-                p
-                for p in model_info.signature.params
-                if p.name == "batch_size" and p.default == 16
-            ]
-        )
+        len([p for p in model_info.signature.params if p.name == "batch_size" and p.default == 16])
         == 1
     )
 
@@ -673,9 +657,7 @@ def test_inference_params(tmp_path):
 
 
 def test_inference_params_overlap(tmp_path):
-    with pytest.raises(
-        mlflow.MlflowException, match=r"any of \['prefix'\] as parameters"
-    ):
+    with pytest.raises(mlflow.MlflowException, match=r"any of \['prefix'\] as parameters"):
         mlflow.openai.save_model(
             model="text-davinci-003",
             task=completions(),
@@ -684,9 +666,7 @@ def test_inference_params_overlap(tmp_path):
             signature=ModelSignature(
                 inputs=Schema([ColSpec(type="string", name=None)]),
                 outputs=Schema([ColSpec(type="string", name=None)]),
-                params=ParamSchema(
-                    [ParamSpec(name="prefix", default=None, dtype="string")]
-                ),
+                params=ParamSchema([ParamSpec(name="prefix", default=None, dtype="string")]),
             ),
         )
 
