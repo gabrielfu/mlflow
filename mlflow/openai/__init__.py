@@ -179,7 +179,11 @@ def _get_task_name(task):
             )
         return task
     else:
-        task_name = mapping.get(task) or mapping.get(task.__class__)
+        task_name = (
+            mapping.get(task)
+            or mapping.get(task.__class__)
+            or mapping.get(getattr(task, "__func__"))  # if task is a method
+        )
         if task_name is None:
             raise mlflow.MlflowException(
                 f"Unsupported task object: {task}", error_code=INVALID_PARAMETER_VALUE

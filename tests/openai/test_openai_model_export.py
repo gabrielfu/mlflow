@@ -44,6 +44,11 @@ def embeddings():
     return openai.embeddings if is_v1 else openai.Embedding
 
 
+def client():
+    if is_v1:
+        return openai.OpenAI(api_key="fake_api_key")
+
+
 @pytest.fixture(scope="module", autouse=True)
 def mock_openai():
     port = get_safe_port()
@@ -107,6 +112,22 @@ def test_log_model():
     assert loaded_model["messages"] == [
         {"role": "system", "content": "You are an MLflow expert."}
     ]
+
+
+@pytest.mark.skipif(not is_v1, reason="Requires OpenAI SDK v1")
+def test_log_openai_client_task():
+    for task in [
+        openai.completions,
+        client().completions,
+        openai.images.edit,
+        client().images.edit,
+    ]:
+        with mlflow.start_run():
+            mlflow.openai.log_model(
+                model="gpt-3.5-turbo",
+                task=task,
+                artifact_path="model",
+            )
 
 
 def test_chat_single_variable(tmp_path):
