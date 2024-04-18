@@ -679,7 +679,6 @@ def test_engine_and_deployment_id_for_azure_openai(tmp_path, monkeypatch):
         path=tmp_path,
     )
     with pytest.raises(
-        MlflowException,
-        match=r"Either engine or deployment_id must be set for Azure OpenAI API",
+        MlflowException, match=r"Either engine or deployment_id must be set for Azure OpenAI API"
     ):
         mlflow.pyfunc.load_model(tmp_path)
