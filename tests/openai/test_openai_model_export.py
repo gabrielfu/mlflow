@@ -3,7 +3,6 @@ import json
 import subprocess
 import sys
 import time
-from distutils.version import Version
 from unittest import mock
 
 import numpy as np
@@ -12,6 +11,7 @@ import pandas as pd
 import pytest
 import requests
 import yaml
+from packaging.version import Version
 from pyspark.sql import SparkSession
 
 import mlflow
