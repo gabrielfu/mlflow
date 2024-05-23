@@ -6,13 +6,13 @@ from aiohttp import ClientTimeout
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 
-from mlflow.gateway.config import MlflowModelServingConfig, RouteConfig
-from mlflow.gateway.constants import (
+from mlflow.deployments.server.config import MlflowModelServingConfig, RouteConfig
+from mlflow.deployments.server.constants import (
     MLFLOW_GATEWAY_ROUTE_TIMEOUT_SECONDS,
     MLFLOW_SERVING_RESPONSE_KEY,
 )
-from mlflow.gateway.providers.mlflow import MlflowModelServingProvider
-from mlflow.gateway.schemas import chat, completions, embeddings
+from mlflow.deployments.server.providers import MlflowModelServingProvider
+from mlflow.deployments.server.schemas import chat, completions, embeddings
 
 from tests.gateway.tools import MockAsyncResponse, mock_http_client
 

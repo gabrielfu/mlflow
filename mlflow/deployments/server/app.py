@@ -9,22 +9,9 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from mlflow.deployments.server.config import Endpoint
-from mlflow.deployments.server.constants import (
-    MLFLOW_DEPLOYMENTS_CRUD_ENDPOINT_BASE,
-    MLFLOW_DEPLOYMENTS_ENDPOINTS_BASE,
-    MLFLOW_DEPLOYMENTS_HEALTH_ENDPOINT,
-    MLFLOW_DEPLOYMENTS_LIMITS_BASE,
-    MLFLOW_DEPLOYMENTS_LIST_ENDPOINTS_PAGE_SIZE,
-    MLFLOW_DEPLOYMENTS_QUERY_SUFFIX,
-)
-from mlflow.environment_variables import (
-    MLFLOW_DEPLOYMENTS_CONFIG,
-    MLFLOW_GATEWAY_RATE_LIMITS_STORAGE_URI,
-)
-from mlflow.exceptions import MlflowException
-from mlflow.gateway.base_models import SetLimitsModel
-from mlflow.gateway.config import (
+from mlflow.deployments.server.base_models import SetLimitsModel
+from mlflow.deployments.server.config import (
+    Endpoint,
     GatewayConfig,
     LimitsConfig,
     Route,
@@ -32,7 +19,13 @@ from mlflow.gateway.config import (
     RouteType,
     _load_route_config,
 )
-from mlflow.gateway.constants import (
+from mlflow.deployments.server.constants import (
+    MLFLOW_DEPLOYMENTS_CRUD_ENDPOINT_BASE,
+    MLFLOW_DEPLOYMENTS_ENDPOINTS_BASE,
+    MLFLOW_DEPLOYMENTS_HEALTH_ENDPOINT,
+    MLFLOW_DEPLOYMENTS_LIMITS_BASE,
+    MLFLOW_DEPLOYMENTS_LIST_ENDPOINTS_PAGE_SIZE,
+    MLFLOW_DEPLOYMENTS_QUERY_SUFFIX,
     MLFLOW_GATEWAY_CRUD_ROUTE_BASE,
     MLFLOW_GATEWAY_HEALTH_ENDPOINT,
     MLFLOW_GATEWAY_LIMITS_BASE,
@@ -40,9 +33,14 @@ from mlflow.gateway.constants import (
     MLFLOW_GATEWAY_SEARCH_ROUTES_PAGE_SIZE,
     MLFLOW_QUERY_SUFFIX,
 )
-from mlflow.gateway.providers import get_provider
-from mlflow.gateway.schemas import chat, completions, embeddings
-from mlflow.gateway.utils import SearchRoutesToken, make_streaming_response
+from mlflow.deployments.server.providers import get_provider
+from mlflow.deployments.server.schemas import chat, completions, embeddings
+from mlflow.deployments.server.utils import SearchRoutesToken, make_streaming_response
+from mlflow.environment_variables import (
+    MLFLOW_DEPLOYMENTS_CONFIG,
+    MLFLOW_GATEWAY_RATE_LIMITS_STORAGE_URI,
+)
+from mlflow.exceptions import MlflowException
 from mlflow.version import VERSION
 
 

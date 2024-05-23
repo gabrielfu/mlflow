@@ -3,9 +3,7 @@ from typing import Any, AsyncGenerator, Dict
 
 import aiohttp
 
-from mlflow.gateway.constants import (
-    MLFLOW_GATEWAY_ROUTE_TIMEOUT_SECONDS,
-)
+from mlflow.deployments.server.constants import MLFLOW_GATEWAY_ROUTE_TIMEOUT_SECONDS
 from mlflow.utils.uri import append_to_uri_path
 
 

@@ -8,16 +8,14 @@ import botocore.exceptions
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 
-from mlflow.gateway.config import AmazonBedrockConfig, AWSIdAndKey, AWSRole, RouteConfig
-from mlflow.gateway.constants import (
-    MLFLOW_AI_GATEWAY_ANTHROPIC_DEFAULT_MAX_TOKENS,
-)
-from mlflow.gateway.exceptions import AIGatewayConfigException
-from mlflow.gateway.providers.anthropic import AnthropicAdapter
-from mlflow.gateway.providers.base import BaseProvider, ProviderAdapter
-from mlflow.gateway.providers.cohere import CohereAdapter
-from mlflow.gateway.providers.utils import rename_payload_keys
-from mlflow.gateway.schemas import completions
+from mlflow import MlflowException
+from mlflow.deployments.server.config import AmazonBedrockConfig, AWSIdAndKey, AWSRole, RouteConfig
+from mlflow.deployments.server.constants import MLFLOW_AI_GATEWAY_ANTHROPIC_DEFAULT_MAX_TOKENS
+from mlflow.deployments.server.providers.anthropic import AnthropicAdapter
+from mlflow.deployments.server.providers.base import BaseProvider, ProviderAdapter
+from mlflow.deployments.server.providers.cohere import CohereAdapter
+from mlflow.deployments.server.providers.utils import rename_payload_keys
+from mlflow.deployments.server.schemas import completions
 
 AWS_BEDROCK_ANTHROPIC_MAXIMUM_MAX_TOKENS = 8191
 
@@ -200,7 +198,7 @@ class AmazonBedrockProvider(BaseProvider):
             )
             return self._client
         except botocore.exceptions.UnknownServiceError as e:
-            raise AIGatewayConfigException(
+            raise MlflowException(
                 "Cannot create Amazon Bedrock client; ensure boto3/botocore "
                 "linked from the Amazon Bedrock user guide are installed. "
                 "Otherwise likely missing credentials or accessing account without to "

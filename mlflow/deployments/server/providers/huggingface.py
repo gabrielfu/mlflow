@@ -4,13 +4,13 @@ from typing import Any, Dict
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 
-from mlflow.gateway.config import HuggingFaceTextGenerationInferenceConfig, RouteConfig
-from mlflow.gateway.providers.base import BaseProvider
-from mlflow.gateway.providers.utils import (
+from mlflow.deployments.server.config import HuggingFaceTextGenerationInferenceConfig, RouteConfig
+from mlflow.deployments.server.providers.base import BaseProvider
+from mlflow.deployments.server.providers.utils import (
     rename_payload_keys,
     send_request,
 )
-from mlflow.gateway.schemas import completions
+from mlflow.deployments.server.schemas import completions
 
 
 class HFTextGenerationInferenceServerProvider(BaseProvider):

@@ -1,7 +1,6 @@
 import pytest
 
-from mlflow.exceptions import MlflowException
-from mlflow.gateway.utils import (
+from mlflow.deployments.server.utils import (
     SearchRoutesToken,
     _is_valid_uri,
     assemble_uri_path,
@@ -11,6 +10,7 @@ from mlflow.gateway.utils import (
     resolve_route_url,
     set_gateway_uri,
 )
+from mlflow.exceptions import MlflowException
 
 
 @pytest.mark.parametrize(

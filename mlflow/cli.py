@@ -1,4 +1,3 @@
-import contextlib
 import json
 import logging
 import os
@@ -672,12 +671,6 @@ try:
     cli.add_command(mlflow.sagemaker.cli.commands)
 except ImportError:
     pass
-
-
-with contextlib.suppress(ImportError):
-    import mlflow.gateway.cli
-
-    cli.add_command(mlflow.gateway.cli.commands)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,10 @@ from unittest import mock
 import pytest
 from requests.exceptions import HTTPError
 
-import mlflow.gateway.utils
+import mlflow.deployments.server.utils
+from mlflow.deployments.server.config import Route
+from mlflow.deployments.server.constants import MLFLOW_GATEWAY_SEARCH_ROUTES_PAGE_SIZE
+from mlflow.deployments.server.utils import resolve_route_url
 from mlflow.environment_variables import MLFLOW_GATEWAY_URI
 from mlflow.exceptions import MlflowException
 from mlflow.gateway import (
@@ -18,9 +21,6 @@ from mlflow.gateway import (
     set_gateway_uri,
     set_limits,
 )
-from mlflow.gateway.config import Route
-from mlflow.gateway.constants import MLFLOW_GATEWAY_SEARCH_ROUTES_PAGE_SIZE
-from mlflow.gateway.utils import resolve_route_url
 
 from tests.gateway.tools import Gateway, save_yaml
 
@@ -58,7 +58,7 @@ def basic_config_dict():
 
 @pytest.fixture(autouse=True)
 def clear_uri():
-    mlflow.gateway.utils._gateway_uri = None
+    mlflow.deployments.server.utils._gateway_uri = None
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ def test_fluent_health_check_on_non_running_server(monkeypatch):
 
 def test_fluent_health_check_on_env_var_uri(gateway, monkeypatch):
     monkeypatch.setenv(MLFLOW_GATEWAY_URI.name, gateway.url)
-    mlflow.gateway.utils._gateway_uri = None
+    mlflow.deployments.server.utils._gateway_uri = None
     assert get_route("completions").model.name == "text-davinci-003"
 
 

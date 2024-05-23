@@ -12,9 +12,11 @@ from urllib.parse import urlparse
 
 from starlette.responses import StreamingResponse
 
+from mlflow.deployments.server.constants import (
+    MLFLOW_AI_GATEWAY_MOSAICML_CHAT_SUPPORTED_MODEL_PREFIXES,
+)
 from mlflow.environment_variables import MLFLOW_GATEWAY_URI
 from mlflow.exceptions import MlflowException
-from mlflow.gateway.constants import MLFLOW_AI_GATEWAY_MOSAICML_CHAT_SUPPORTED_MODEL_PREFIXES
 from mlflow.utils.uri import append_to_uri_path
 
 _logger = logging.getLogger(__name__)

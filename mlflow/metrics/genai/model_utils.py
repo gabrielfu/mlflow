@@ -19,8 +19,6 @@ def score_model_on_payload(model_uri, payload, eval_parameters=None):
 
     if prefix == "openai":
         return _call_openai_api(suffix, payload, eval_parameters)
-    elif prefix == "gateway":
-        return _call_gateway_api(suffix, payload, eval_parameters)
     elif prefix == "endpoints":
         return _call_deployments_api(suffix, payload, eval_parameters)
     elif prefix in ("model", "runs"):
@@ -155,32 +153,6 @@ def _call_deployments_api(deployment_uri, payload, eval_parameters, wrap_payload
         raise MlflowException(
             f"Unsupported endpoint type: {endpoint_type}. Use an "
             "endpoint of type 'llm/v1/completions' or 'llm/v1/chat' instead.",
-            error_code=INVALID_PARAMETER_VALUE,
-        )
-
-
-def _call_gateway_api(gateway_uri, payload, eval_parameters):
-    from mlflow.gateway import get_route, query
-
-    route_info = get_route(gateway_uri).dict()
-    if route_info["endpoint_type"] == "llm/v1/completions":
-        completions_payload = {
-            "prompt": payload,
-            **eval_parameters,
-        }
-        response = query(gateway_uri, completions_payload)
-        return _parse_completions_response_format(response)
-    elif route_info["endpoint_type"] == "llm/v1/chat":
-        chat_payload = {
-            "messages": [{"role": "user", "content": payload}],
-            **eval_parameters,
-        }
-        response = query(gateway_uri, chat_payload)
-        return _parse_chat_response_format(response)
-    else:
-        raise MlflowException(
-            f"Unsupported gateway route type: {route_info['endpoint_type']}. Use a "
-            "route of type 'llm/v1/completions' or 'llm/v1/chat' instead.",
             error_code=INVALID_PARAMETER_VALUE,
         )
 

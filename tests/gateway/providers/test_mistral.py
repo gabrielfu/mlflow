@@ -7,10 +7,10 @@ from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 
-from mlflow.gateway.config import RouteConfig
-from mlflow.gateway.constants import MLFLOW_GATEWAY_ROUTE_TIMEOUT_SECONDS
-from mlflow.gateway.providers.mistral import MistralProvider
-from mlflow.gateway.schemas import completions, embeddings
+from mlflow.deployments.server.config import RouteConfig
+from mlflow.deployments.server.constants import MLFLOW_GATEWAY_ROUTE_TIMEOUT_SECONDS
+from mlflow.deployments.server.providers.mistral import MistralProvider
+from mlflow.deployments.server.schemas import completions, embeddings
 
 from tests.gateway.tools import MockAsyncResponse
 

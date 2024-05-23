@@ -1,23 +1,40 @@
 from typing import List, Literal, Optional
 
-from mlflow.gateway.base_models import ResponseModel
-from mlflow.gateway.config import IS_PYDANTIC_V2
-from mlflow.gateway.schemas.chat import BaseRequestPayload
+from pydantic import Field
+
+from mlflow.deployments.server.base_models import RequestModel, ResponseModel
+from mlflow.deployments.server.config import IS_PYDANTIC_V2
+
+
+class RequestMessage(RequestModel):
+    role: str
+    content: str
+
+
+class BaseRequestPayload(RequestModel):
+    temperature: float = Field(0.0, ge=0, le=2)
+    n: int = Field(1, ge=1)
+    stop: Optional[List[str]] = Field(None, min_items=1)
+    max_tokens: Optional[int] = Field(None, ge=1)
+    stream: Optional[bool] = None
+    model: Optional[str] = None
+
 
 _REQUEST_PAYLOAD_EXTRA_SCHEMA = {
-    "example": {
-        "prompt": "hello",
-        "temperature": 0.0,
-        "max_tokens": 64,
-        "stop": ["END"],
-        "n": 1,
-    }
+    "messages": [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello!"},
+    ],
+    "temperature": 0.0,
+    "max_tokens": 64,
+    "stop": ["END"],
+    "n": 1,
+    "stream": False,
 }
 
 
 class RequestPayload(BaseRequestPayload):
-    prompt: str
-    model: Optional[str] = None
+    messages: List[RequestMessage] = Field(..., min_items=1)
 
     class Config:
         if IS_PYDANTIC_V2:
@@ -26,13 +43,18 @@ class RequestPayload(BaseRequestPayload):
             schema_extra = _REQUEST_PAYLOAD_EXTRA_SCHEMA
 
 
+class ResponseMessage(ResponseModel):
+    role: str
+    content: str
+
+
 class Choice(ResponseModel):
     index: int
-    text: str
+    message: ResponseMessage
     finish_reason: Optional[str] = None
 
 
-class CompletionsUsage(ResponseModel):
+class ChatUsage(ResponseModel):
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
@@ -40,25 +62,29 @@ class CompletionsUsage(ResponseModel):
 
 _RESPONSE_PAYLOAD_EXTRA_SCHEMA = {
     "example": {
-        "id": "cmpl-123",
-        "object": "text_completion",
-        "created": 1589478378,
-        "model": "gpt-4",
+        "id": "3cdb958c-e4cc-4834-b52b-1d1a7f324714",
+        "object": "chat.completion",
+        "created": 1700173217,
+        "model": "llama-2-70b-chat-hf",
         "choices": [
-            {"text": "Hello! I am an AI Assistant!", "index": 0, "finish_reason": "length"}
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "Hello! I am an AI assistant"},
+                "finish_reason": "stop",
+            }
         ],
-        "usage": {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12},
+        "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
     }
 }
 
 
 class ResponsePayload(ResponseModel):
     id: Optional[str] = None
-    object: Literal["text_completion"] = "text_completion"
+    object: Literal["chat.completion"] = "chat.completion"
     created: int
     model: str
     choices: List[Choice]
-    usage: CompletionsUsage
+    usage: ChatUsage
 
     class Config:
         if IS_PYDANTIC_V2:
@@ -80,10 +106,10 @@ class StreamChoice(ResponseModel):
 
 _STREAM_RESPONSE_PAYLOAD_EXTRA_SCHEMA = {
     "example": {
-        "id": "cmpl-123",
-        "object": "text_completion",
-        "created": 1589478378,
-        "model": "gpt-4",
+        "id": "3cdb958c-e4cc-4834-b52b-1d1a7f324714",
+        "object": "chat.completion",
+        "created": 1700173217,
+        "model": "llama-2-70b-chat-hf",
         "choices": [
             {
                 "index": 6,
@@ -97,7 +123,7 @@ _STREAM_RESPONSE_PAYLOAD_EXTRA_SCHEMA = {
 
 class StreamResponsePayload(ResponseModel):
     id: Optional[str] = None
-    object: Literal["text_completion_chunk"] = "text_completion_chunk"
+    object: Literal["chat.completion.chunk"] = "chat.completion.chunk"
     created: int
     model: str
     choices: List[StreamChoice]

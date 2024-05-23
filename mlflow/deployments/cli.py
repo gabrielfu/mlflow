@@ -461,7 +461,7 @@ def get_endpoint(target, endpoint):
 
 
 def validate_config_path(_ctx, _param, value):
-    from mlflow.gateway.config import _validate_config
+    from mlflow.deployments.server.config import _validate_config
 
     try:
         _validate_config(value)

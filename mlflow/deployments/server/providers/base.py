@@ -3,8 +3,9 @@ from typing import AsyncIterable, Tuple
 
 from fastapi import HTTPException
 
-from mlflow.gateway.config import RouteConfig
-from mlflow.gateway.schemas import chat, completions, embeddings
+from mlflow.deployments.server.config import RouteConfig
+from mlflow.deployments.server.schemas import chat, completions
+from mlflow.deployments.server.schemas import embeddings
 
 
 class BaseProvider(ABC):

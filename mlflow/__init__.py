@@ -26,7 +26,6 @@ implement mutual exclusion manually.
 
 For a lower level API, see the :py:mod:`mlflow.client` module.
 """
-import contextlib
 
 from mlflow.version import VERSION
 
@@ -228,12 +227,3 @@ __all__ = [
     "start_span",
     "trace",
 ]
-
-
-# `mlflow.gateway` depends on optional dependencies such as pydantic, psutil, and has version
-# restrictions for dependencies. Importing this module fails if they are not installed or
-# if invalid versions of these required packages are installed.
-with contextlib.suppress(Exception):
-    from mlflow import gateway  # noqa: F401
-
-    __all__.append("gateway")

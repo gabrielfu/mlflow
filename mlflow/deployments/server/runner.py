@@ -7,9 +7,9 @@ from typing import Generator
 from watchfiles import watch
 
 from mlflow.deployments.server import app
+from mlflow.deployments.server.config import _load_route_config
+from mlflow.deployments.server.utils import kill_child_processes
 from mlflow.environment_variables import MLFLOW_DEPLOYMENTS_CONFIG
-from mlflow.gateway.config import _load_route_config
-from mlflow.gateway.utils import kill_child_processes
 
 _logger = logging.getLogger(__name__)
 

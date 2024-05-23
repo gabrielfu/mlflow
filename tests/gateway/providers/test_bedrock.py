@@ -3,15 +3,18 @@ from unittest import mock
 import pytest
 from fastapi.encoders import jsonable_encoder
 
-from mlflow.gateway.config import (
+from mlflow.deployments.server.config import (
     AmazonBedrockConfig,
     AWSBaseConfig,
     AWSIdAndKey,
     AWSRole,
     RouteConfig,
 )
-from mlflow.gateway.providers.bedrock import AmazonBedrockModelProvider, AmazonBedrockProvider
-from mlflow.gateway.schemas import completions
+from mlflow.deployments.server.providers.bedrock import (
+    AmazonBedrockModelProvider,
+    AmazonBedrockProvider,
+)
+from mlflow.deployments.server.schemas import completions
 
 from tests.gateway.providers.test_anthropic import (
     completions_response as anthropic_completions_response,
@@ -372,9 +375,11 @@ def test_bedrock_aws_client(provider, config, aws_config):
             fix["response"],
             fix["expected"],
             fix["model_request"],
-            marks=[]
-            if fix["provider"] is not AmazonBedrockModelProvider.COHERE
-            else pytest.mark.skip("Cohere isn't available on Amazon Bedrock yet"),
+            marks=(
+                []
+                if fix["provider"] is not AmazonBedrockModelProvider.COHERE
+                else pytest.mark.skip("Cohere isn't available on Amazon Bedrock yet")
+            ),
         )
         for fix in bedrock_model_provider_fixtures
     ],

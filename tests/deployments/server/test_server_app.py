@@ -4,12 +4,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mlflow.deployments.server.app import create_app_from_config, create_app_from_env
+from mlflow.deployments.server.config import GatewayConfig
 from mlflow.deployments.server.constants import (
     MLFLOW_DEPLOYMENTS_CRUD_ENDPOINT_BASE,
     MLFLOW_DEPLOYMENTS_ENDPOINTS_BASE,
 )
 from mlflow.exceptions import MlflowException
-from mlflow.gateway.config import GatewayConfig
 
 from tests.gateway.tools import MockAsyncResponse
 

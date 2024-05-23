@@ -2,8 +2,8 @@ from unittest import mock
 
 import pytest
 
+from mlflow.deployments.server.config import Route, RouteModelInfo
 from mlflow.exceptions import MlflowException
-from mlflow.gateway.config import Route, RouteModelInfo
 from mlflow.metrics.genai.model_utils import (
     _parse_model_uri,
     score_model_on_payload,
